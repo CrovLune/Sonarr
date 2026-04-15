@@ -1,6 +1,7 @@
 using System;
 using System.Data;
 using System.Data.SQLite;
+using System.Linq;
 using NLog;
 using NLog.Common;
 using NLog.Config;
@@ -78,7 +79,8 @@ namespace NzbDrone.Core.Instrumentation
                 {
                     if (string.IsNullOrWhiteSpace(message))
                     {
-                        message = logEvent.Exception.Message;
+                        message = new[] { logEvent.Exception.Message, logEvent.Exception.ToString() }
+                            .FirstOrDefault(m => !string.IsNullOrWhiteSpace(m)) ?? string.Empty;
                     }
                     else
                     {
