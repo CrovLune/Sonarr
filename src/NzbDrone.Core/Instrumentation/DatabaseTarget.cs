@@ -80,7 +80,7 @@ namespace NzbDrone.Core.Instrumentation
                     if (string.IsNullOrWhiteSpace(message))
                     {
                         message = new[] { logEvent.Exception.Message, logEvent.Exception.ToString() }
-                            .FirstOrDefault(m => !string.IsNullOrWhiteSpace(m));
+                            .FirstOrDefault(m => !string.IsNullOrWhiteSpace(m)) ?? string.Empty;
                     }
                     else
                     {
