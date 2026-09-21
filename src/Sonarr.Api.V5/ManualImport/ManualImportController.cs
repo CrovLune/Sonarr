@@ -22,7 +22,8 @@ public class ManualImportController : Controller
     [Produces("application/json")]
     public List<ManualImportResource> GetMediaFiles(string? folder, [FromQuery] string[]? downloadIds, int? seriesId, int? seasonNumber, bool filterExistingFiles = true)
     {
-        if (seriesId.HasValue && downloadIds == null)
+        // downloadIds binds to an empty array (not null) when the query parameter is absent
+        if (seriesId.HasValue && (downloadIds is null || downloadIds.Empty()))
         {
             return _manualImportService.GetMediaFiles(seriesId.Value, seasonNumber)
                 .ToResource()
