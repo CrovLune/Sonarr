@@ -88,6 +88,11 @@ public class ManualImportController : Controller
                 processedItem.SeasonNumber = item.SeasonNumber;
             }
 
+            if (item.RelativePath.IsNotNullOrWhiteSpace())
+            {
+                processedItem.RelativePath = item.RelativePath;
+            }
+
             updatedItems.Add(processedItem);
         }
 
