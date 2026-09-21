@@ -70,8 +70,8 @@ public static class MediaManagementConfigResourceMapper
             SeasonPackUpgradeThreshold = model.SeasonPackUpgradeThreshold,
             TmdbApiKey = model.TmdbApiKey.IsNotNullOrWhiteSpace()
                 ? model.TmdbApiKey.Length > 4
-                    ? "***" + model.TmdbApiKey[^4..]
-                    : "***"
+                    ? ConfigService.TmdbApiKeyMask + model.TmdbApiKey[^4..]
+                    : ConfigService.TmdbApiKeyMask
                 : string.Empty
         };
     }
