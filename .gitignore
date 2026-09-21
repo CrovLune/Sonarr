@@ -165,3 +165,8 @@ src/.idea/
 
 # Ignore Jetbrains IntelliJ Workspace Directories
 .idea/
+
+# Local environment files (docker compose reads secrets from these)
+.env
+.env.*
+!.env.example
