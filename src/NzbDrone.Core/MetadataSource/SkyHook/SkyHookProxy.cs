@@ -373,7 +373,7 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
             if (tmdbApiKey.IsNullOrWhiteSpace() || !show.TmdbId.HasValue || show.TmdbId.Value <= 0)
             {
                 _logger.Debug("FetchOriginalTitleFromTmdb: Skipping - ApiKey empty: {0} TmdbId: {1}", tmdbApiKey.IsNullOrWhiteSpace(), show.TmdbId);
-                return show.AlternativeTitles?.FirstOrDefault()?.Title;
+                return null;
             }
 
             if (show.OriginalLanguage.IsNullOrWhiteSpace() || show.OriginalLanguage == "eng")
@@ -387,7 +387,7 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
             if (isoLanguage == null)
             {
                 _logger.Debug("Could not find ISO language for '{0}', skipping TMDB lookup", show.OriginalLanguage);
-                return show.AlternativeTitles?.FirstOrDefault()?.Title;
+                return null;
             }
 
             var tmdbId = show.TmdbId.Value;
@@ -413,7 +413,7 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
                 if (response.HasHttpError)
                 {
                     _logger.Warn("TMDB API request failed with status {0} for TmdbId {1}", response.StatusCode, tmdbId);
-                    return show.AlternativeTitles?.FirstOrDefault()?.Title;
+                    return null;
                 }
 
                 var originalName = response.Resource?.OriginalName;
@@ -431,9 +431,11 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
                 _logger.Warn(ex, "Failed to fetch original title from TMDB for TmdbId {0}", tmdbId);
             }
 
-            var fallback = show.AlternativeTitles?.FirstOrDefault()?.Title;
-            _tmdbOriginalTitleCache[tmdbId] = fallback;
-            return fallback;
+            // No language-tagged original title available. Alternative titles carry no
+            // language information, so guessing one risks writing an unrelated show's title
+            // (and poisoning search with it).
+            _tmdbOriginalTitleCache[tmdbId] = null;
+            return null;
         }
 
         private static MediaCoverTypes MapCoverType(string coverType)
