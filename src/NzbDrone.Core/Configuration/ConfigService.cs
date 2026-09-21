@@ -410,6 +410,23 @@ namespace NzbDrone.Core.Configuration
             }
         }
 
+        public string OriginalTitleLanguages
+        {
+            get
+            {
+                var value = GetValue("OriginalTitleLanguages", string.Empty);
+
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    value = Environment.GetEnvironmentVariable("SONARR__ORIGINAL_TITLE_LANGUAGES") ?? string.Empty;
+                }
+
+                return value;
+            }
+
+            set => SetValue("OriginalTitleLanguages", value);
+        }
+
         public bool CleanupMetadataImages
         {
             get { return GetValueBoolean("CleanupMetadataImages", true); }

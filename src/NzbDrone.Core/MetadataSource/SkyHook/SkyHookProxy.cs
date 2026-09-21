@@ -207,17 +207,25 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
             series.ImdbId = show.ImdbId;
             series.MalIds = show.MalIds;
             series.AniListIds = show.AniListIds;
-            series.Title = show.Title;
-            series.OriginalTitle = show.OriginalTitle ?? FetchOriginalTitleFromTmdb(show);
-            series.CleanOriginalTitle = series.OriginalTitle.IsNotNullOrWhiteSpace()
-                ? Parser.Parser.CleanSeriesTitle(series.OriginalTitle)
-                : null;
-            series.CleanTitle = Parser.Parser.CleanSeriesTitle(show.Title);
-            series.SortTitle = SeriesTitleNormalizer.Normalize(show.Title, show.TvdbId);
 
+            // Resolved before the titles because the title choice depends on it.
             series.OriginalLanguage = show.OriginalLanguage.IsNotNullOrWhiteSpace() ?
                 IsoLanguages.Find(show.OriginalLanguage.ToLower())?.Language ?? Language.English :
                 Language.English;
+
+            var titles = OriginalTitleSelection.Select(
+                show.Title,
+                show.OriginalTitle ?? FetchOriginalTitleFromTmdb(show),
+                series.OriginalLanguage,
+                OriginalTitleSelection.ParseLanguages(_configService.OriginalTitleLanguages));
+
+            series.Title = titles.Title;
+            series.OriginalTitle = titles.AlternateTitle;
+            series.CleanOriginalTitle = titles.AlternateTitle.IsNotNullOrWhiteSpace()
+                ? Parser.Parser.CleanSeriesTitle(titles.AlternateTitle)
+                : null;
+            series.CleanTitle = Parser.Parser.CleanSeriesTitle(titles.Title);
+            series.SortTitle = SeriesTitleNormalizer.Normalize(titles.Title, show.TvdbId);
 
             if (show.FirstAired != null)
             {
