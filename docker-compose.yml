@@ -1,0 +1,9 @@
+services:
+  sonarr:
+    image: ghcr.io/crovlune/sonarr:latest
+    ports:
+      - "8989:8989"
+    environment:
+      - SONARR__TMDB_API_KEY=${SONARR__TMDB_API_KEY}
+    volumes:
+      - ./config:/config

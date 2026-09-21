@@ -1,3 +1,4 @@
+using NzbDrone.Common.Extensions;
 using NzbDrone.Core.Configuration;
 using NzbDrone.Core.MediaFiles;
 using NzbDrone.Core.MediaFiles.EpisodeImport;
@@ -33,6 +34,7 @@ public class MediaManagementSettingsResource : RestResource
     public string? UserRejectedExtensions { get; set; }
     public SeasonPackUpgradeType SeasonPackUpgrade { get; set; }
     public double SeasonPackUpgradeThreshold { get; set; }
+    public string? TmdbApiKey { get; set; }
 }
 
 public static class MediaManagementConfigResourceMapper
@@ -65,7 +67,12 @@ public static class MediaManagementConfigResourceMapper
             EnableMediaInfo = model.EnableMediaInfo,
             UserRejectedExtensions = model.UserRejectedExtensions,
             SeasonPackUpgrade = model.SeasonPackUpgrade,
-            SeasonPackUpgradeThreshold = model.SeasonPackUpgradeThreshold
+            SeasonPackUpgradeThreshold = model.SeasonPackUpgradeThreshold,
+            TmdbApiKey = model.TmdbApiKey.IsNotNullOrWhiteSpace()
+                ? model.TmdbApiKey.Length > 4
+                    ? "***" + model.TmdbApiKey[^4..]
+                    : "***"
+                : string.Empty
         };
     }
 }

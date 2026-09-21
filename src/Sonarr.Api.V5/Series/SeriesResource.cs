@@ -9,6 +9,7 @@ namespace Sonarr.Api.V5.Series;
 public class SeriesResource : RestResource
 {
     public string? Title { get; set; }
+    public string? OriginalTitle { get; set; }
     public List<AlternateTitleResource>? AlternateTitles { get; set; }
     public string? SortTitle { get; set; }
     public SeriesStatusType Status { get; set; }
@@ -63,6 +64,7 @@ public static class SeriesResourceMapper
         {
             Id = model.Id,
             Title = model.Title,
+            OriginalTitle = model.OriginalTitle,
             SortTitle = model.SortTitle,
             Status = model.Status,
             Overview = model.Overview,
@@ -106,6 +108,7 @@ public static class SeriesResourceMapper
         {
             Id = resource.Id,
             Title = resource.Title,
+            OriginalTitle = resource.OriginalTitle,
             SortTitle = resource.SortTitle,
             Status = resource.Status,
             Overview = resource.Overview,

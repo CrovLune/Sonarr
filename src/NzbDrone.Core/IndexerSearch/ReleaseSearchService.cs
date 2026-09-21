@@ -302,11 +302,24 @@ namespace NzbDrone.Core.IndexerSearch
 
             if (includeGlobal)
             {
+                var sceneTitles = new List<string> { series.Title };
+
+                if (series.OriginalTitle.IsNotNullOrWhiteSpace() &&
+                    !string.Equals(series.OriginalTitle, series.Title, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    _logger.Debug("Adding OriginalTitle '{0}' to scene titles for series '{1}'", series.OriginalTitle, series.Title);
+                    sceneTitles.Add(series.OriginalTitle);
+                }
+                else
+                {
+                    _logger.Debug("OriginalTitle not added: OriginalTitle='{0}', Title='{1}'", series.OriginalTitle ?? "(null)", series.Title);
+                }
+
                 yield return new SceneEpisodeMapping
                 {
                     Episode = episode,
                     SearchMode = SearchMode.Default,
-                    SceneTitles = new List<string> { series.Title },
+                    SceneTitles = sceneTitles,
                     SeasonNumber = episode.SceneSeasonNumber ?? episode.SeasonNumber,
                     EpisodeNumber = episode.SceneEpisodeNumber ?? episode.EpisodeNumber,
                     AbsoluteEpisodeNumber = episode.SceneSeasonNumber ?? episode.AbsoluteEpisodeNumber
@@ -415,9 +428,15 @@ namespace NzbDrone.Core.IndexerSearch
                 downloadDecisions.AddRange(decisions);
             }
 
-            foreach (var episode in episodesToSearch)
+            var episodeTasks = episodesToSearch
+                .Select(episode => SearchAnime(series, episode, monitoredOnly, userInvokedSearch, interactiveSearch, true))
+                .ToList();
+
+            var episodeResults = await Task.WhenAll(episodeTasks);
+
+            foreach (var result in episodeResults)
             {
-                downloadDecisions.AddRange(await SearchAnime(series, episode, monitoredOnly, userInvokedSearch, interactiveSearch, true));
+                downloadDecisions.AddRange(result);
             }
 
             return DeDupeDecisions(downloadDecisions);
@@ -473,6 +492,26 @@ namespace NzbDrone.Core.IndexerSearch
             {
                 spec.SceneTitles.Add(series.Title);
             }
+
+            if (series.OriginalTitle.IsNotNullOrWhiteSpace() &&
+                !spec.SceneTitles.Contains(series.OriginalTitle, StringComparer.InvariantCultureIgnoreCase))
+            {
+                _logger.Debug("Adding OriginalTitle '{0}' to search spec scene titles for series '{1}'", series.OriginalTitle, series.Title);
+                spec.SceneTitles.Add(series.OriginalTitle);
+            }
+
+            var beforeCount = spec.SceneTitles.Count;
+            spec.SceneTitles = spec.SceneTitles
+                .GroupBy(t => Parser.Parser.CleanSeriesTitle(t), StringComparer.Ordinal)
+                .Select(g => g.First())
+                .ToList();
+
+            if (spec.SceneTitles.Count < beforeCount)
+            {
+                _logger.Debug("Scene titles deduplicated by clean form: {0} -> {1}", beforeCount, spec.SceneTitles.Count);
+            }
+
+            _logger.Debug("Final scene titles for search: [{0}]", string.Join(", ", spec.SceneTitles));
 
             return spec;
         }

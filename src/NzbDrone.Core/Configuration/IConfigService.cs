@@ -73,6 +73,9 @@ namespace NzbDrone.Core.Configuration
         bool EnableColorImpairedMode { get; set; }
         int UILanguage { get; set; }
 
+        // Metadata
+        string TmdbApiKey { get; set; }
+
         // Internal
         bool CleanupMetadataImages { get; set; }
         string PlexClientIdentifier { get; }

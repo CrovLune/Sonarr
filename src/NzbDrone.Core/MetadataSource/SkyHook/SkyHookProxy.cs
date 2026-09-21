@@ -8,6 +8,7 @@ using NzbDrone.Common.Cloud;
 using NzbDrone.Common.Disk;
 using NzbDrone.Common.Extensions;
 using NzbDrone.Common.Http;
+using NzbDrone.Core.Configuration;
 using NzbDrone.Core.DataAugmentation.DailySeries;
 using NzbDrone.Core.Exceptions;
 using NzbDrone.Core.Languages;
@@ -21,18 +22,22 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
     public class SkyHookProxy : IProvideSeriesInfo, ISearchForNewSeries
     {
         private readonly IHttpClient _httpClient;
+        private readonly IConfigService _configService;
         private readonly Logger _logger;
         private readonly ISeriesService _seriesService;
         private readonly IDailySeriesService _dailySeriesService;
         private readonly IHttpRequestBuilderFactory _requestBuilder;
+        private readonly Dictionary<int, string> _tmdbOriginalTitleCache = new();
 
         public SkyHookProxy(IHttpClient httpClient,
                             ISonarrCloudRequestBuilder requestBuilder,
                             ISeriesService seriesService,
                             IDailySeriesService dailySeriesService,
+                            IConfigService configService,
                             Logger logger)
         {
             _httpClient = httpClient;
+            _configService = configService;
             _requestBuilder = requestBuilder.SkyHookTvdb;
             _logger = logger;
             _seriesService = seriesService;
@@ -203,6 +208,10 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
             series.MalIds = show.MalIds;
             series.AniListIds = show.AniListIds;
             series.Title = show.Title;
+            series.OriginalTitle = show.OriginalTitle ?? FetchOriginalTitleFromTmdb(show);
+            series.CleanOriginalTitle = series.OriginalTitle.IsNotNullOrWhiteSpace()
+                ? Parser.Parser.CleanSeriesTitle(series.OriginalTitle)
+                : null;
             series.CleanTitle = Parser.Parser.CleanSeriesTitle(show.Title);
             series.SortTitle = SeriesTitleNormalizer.Normalize(show.Title, show.TvdbId);
 
@@ -352,6 +361,78 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
                 RemoteUrl = arg.Url,
                 CoverType = MapCoverType(arg.CoverType)
             };
+        }
+
+        private string FetchOriginalTitleFromTmdb(ShowResource show)
+        {
+            var tmdbApiKey = _configService.TmdbApiKey;
+
+            _logger.Debug("FetchOriginalTitleFromTmdb: TmdbId={0} OriginalLanguage={1} HasApiKey={2}", show.TmdbId, show.OriginalLanguage, tmdbApiKey.IsNotNullOrWhiteSpace());
+
+            if (tmdbApiKey.IsNullOrWhiteSpace() || !show.TmdbId.HasValue || show.TmdbId.Value <= 0)
+            {
+                _logger.Debug("FetchOriginalTitleFromTmdb: Skipping - ApiKey empty: {0} TmdbId: {1}", tmdbApiKey.IsNullOrWhiteSpace(), show.TmdbId);
+                return show.AlternativeTitles?.FirstOrDefault()?.Title;
+            }
+
+            if (show.OriginalLanguage.IsNullOrWhiteSpace() || show.OriginalLanguage == "eng")
+            {
+                _logger.Debug("FetchOriginalTitleFromTmdb: Skipping - English or no original language");
+                return null;
+            }
+
+            var isoLanguage = IsoLanguages.Find(show.OriginalLanguage.ToLower());
+
+            if (isoLanguage == null)
+            {
+                _logger.Debug("Could not find ISO language for '{0}', skipping TMDB lookup", show.OriginalLanguage);
+                return show.AlternativeTitles?.FirstOrDefault()?.Title;
+            }
+
+            var tmdbId = show.TmdbId.Value;
+
+            if (_tmdbOriginalTitleCache.TryGetValue(tmdbId, out var cachedTitle))
+            {
+                _logger.Debug("Using cached original title '{0}' for TmdbId {1}", cachedTitle, tmdbId);
+                return cachedTitle;
+            }
+
+            try
+            {
+                var httpRequest = new HttpRequest($"https://api.themoviedb.org/3/tv/{tmdbId}")
+                {
+                    AllowAutoRedirect = true,
+                    SuppressHttpError = true
+                };
+
+                httpRequest.Headers.Add("Authorization", $"Bearer {tmdbApiKey}");
+
+                var response = _httpClient.Get<TmdbSeriesResource>(httpRequest);
+
+                if (response.HasHttpError)
+                {
+                    _logger.Warn("TMDB API request failed with status {0} for TmdbId {1}", response.StatusCode, tmdbId);
+                    return show.AlternativeTitles?.FirstOrDefault()?.Title;
+                }
+
+                var originalName = response.Resource?.OriginalName;
+
+                if (originalName.IsNotNullOrWhiteSpace() &&
+                    !string.Equals(originalName, show.Title, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    _logger.Debug("Found original title '{0}' from TMDB for '{1}'", originalName, show.Title);
+                    _tmdbOriginalTitleCache[tmdbId] = originalName;
+                    return originalName;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn(ex, "Failed to fetch original title from TMDB for TmdbId {0}", tmdbId);
+            }
+
+            var fallback = show.AlternativeTitles?.FirstOrDefault()?.Title;
+            _tmdbOriginalTitleCache[tmdbId] = fallback;
+            return fallback;
         }
 
         private static MediaCoverTypes MapCoverType(string coverType)

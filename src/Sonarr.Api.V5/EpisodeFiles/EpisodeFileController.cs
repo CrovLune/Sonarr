@@ -128,6 +128,12 @@ public class EpisodeFileController : RestControllerWithSignalR<EpisodeFileResour
     public object DeleteEpisodeFiles([FromBody] EpisodeFileListResource resource)
     {
         var episodeFiles = _mediaFileService.GetFiles(resource.EpisodeFileIds);
+
+        if (!episodeFiles.Any())
+        {
+            return new { };
+        }
+
         var series = _seriesService.GetSeries(episodeFiles.First().SeriesId);
 
         foreach (var episodeFile in episodeFiles)
@@ -181,6 +187,11 @@ public class EpisodeFileController : RestControllerWithSignalR<EpisodeFileResour
         }
 
         _mediaFileService.Update(episodeFiles);
+
+        if (!episodeFiles.Any())
+        {
+            return Accepted(new List<EpisodeFileResource>());
+        }
 
         var series = _seriesService.GetSeries(episodeFiles.First().SeriesId);
 

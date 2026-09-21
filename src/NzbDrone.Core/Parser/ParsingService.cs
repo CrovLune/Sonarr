@@ -394,6 +394,26 @@ namespace NzbDrone.Core.Parser
                     return new FindSeriesResult(searchCriteria.Series, SeriesMatchType.Title);
                 }
 
+                var parsedCleanTitle = parsedEpisodeInfo.SeriesTitle.CleanSeriesTitle();
+                var searchCleanTitle = searchCriteria.Series.CleanTitle;
+                var searchCleanOriginalTitle = searchCriteria.Series.CleanOriginalTitle;
+
+                if (searchCleanTitle.IsNotNullOrWhiteSpace() &&
+                    parsedCleanTitle.IsNotNullOrWhiteSpace() &&
+                    parsedCleanTitle.Contains(searchCleanTitle, StringComparison.Ordinal))
+                {
+                    _logger.Debug("Matched release '{0}' to search series '{1}' via CleanTitle substring", parsedEpisodeInfo.SeriesTitle, searchCriteria.Series.Title);
+                    return new FindSeriesResult(searchCriteria.Series, SeriesMatchType.Title);
+                }
+
+                if (searchCleanOriginalTitle.IsNotNullOrWhiteSpace() &&
+                    parsedCleanTitle.IsNotNullOrWhiteSpace() &&
+                    parsedCleanTitle.Contains(searchCleanOriginalTitle, StringComparison.Ordinal))
+                {
+                    _logger.Debug("Matched release '{0}' to search series '{1}' via CleanOriginalTitle substring", parsedEpisodeInfo.SeriesTitle, searchCriteria.Series.Title);
+                    return new FindSeriesResult(searchCriteria.Series, SeriesMatchType.Title);
+                }
+
                 if (tvdbId > 0 && tvdbId == searchCriteria.Series.TvdbId)
                 {
                     _logger.ForDebugEvent()

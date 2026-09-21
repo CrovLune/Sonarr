@@ -371,6 +371,22 @@ namespace NzbDrone.Core.Configuration
             set { SetValue("UILanguage", value); }
         }
 
+        public string TmdbApiKey
+        {
+            get
+            {
+                var value = GetValue("TmdbApiKey", string.Empty);
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    value = Environment.GetEnvironmentVariable("SONARR__TMDB_API_KEY") ?? string.Empty;
+                }
+
+                return value;
+            }
+
+            set => SetValue("TmdbApiKey", value);
+        }
+
         public bool CleanupMetadataImages
         {
             get { return GetValueBoolean("CleanupMetadataImages", true); }

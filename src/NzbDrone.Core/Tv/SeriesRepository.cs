@@ -40,6 +40,11 @@ namespace NzbDrone.Core.Tv
             var series = Query(s => s.CleanTitle == cleanTitle)
                                         .ToList();
 
+            if (series.Count == 0)
+            {
+                series = Query(s => s.CleanOriginalTitle == cleanTitle).ToList();
+            }
+
             return ReturnSingleSeriesOrThrow(series);
         }
 
@@ -48,6 +53,11 @@ namespace NzbDrone.Core.Tv
             cleanTitle = cleanTitle.ToLowerInvariant();
 
             var series = Query(s => s.CleanTitle == cleanTitle && s.Year == year).ToList();
+
+            if (series.Count == 0)
+            {
+                series = Query(s => s.CleanOriginalTitle == cleanTitle && s.Year == year).ToList();
+            }
 
             return ReturnSingleSeriesOrThrow(series);
         }
@@ -61,7 +71,18 @@ namespace NzbDrone.Core.Tv
                 builder = Builder().Where($"(strpos(@cleanTitle, \"Series\".\"CleanTitle\") > 0)", new { cleanTitle = cleanTitle });
             }
 
-            return Query(builder).ToList();
+            var series = Query(builder).ToList();
+
+            var builderOriginal = Builder().Where($"instr(@cleanTitle, \"Series\".\"CleanOriginalTitle\")", new { cleanTitle = cleanTitle });
+
+            if (_database.DatabaseType == DatabaseType.PostgreSQL)
+            {
+                builderOriginal = Builder().Where($"(strpos(@cleanTitle, \"Series\".\"CleanOriginalTitle\") > 0)", new { cleanTitle = cleanTitle });
+            }
+
+            series.AddRange(Query(builderOriginal).ToList());
+
+            return series.DistinctBy(s => s.Id).ToList();
         }
 
         public Series FindByTvdbId(int tvdbId)

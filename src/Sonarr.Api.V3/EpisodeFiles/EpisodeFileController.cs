@@ -144,6 +144,11 @@ namespace Sonarr.Api.V3.EpisodeFiles
 
             _mediaFileService.Update(episodeFiles);
 
+            if (!episodeFiles.Any())
+            {
+                return Accepted(new List<EpisodeFileResource>());
+            }
+
             var series = _seriesService.GetSeries(episodeFiles.First().SeriesId);
 
             return Accepted(episodeFiles.ConvertAll(f => f.ToResource(series, _upgradableSpecification, _formatCalculator)));
@@ -169,6 +174,12 @@ namespace Sonarr.Api.V3.EpisodeFiles
         public object DeleteEpisodeFiles([FromBody] EpisodeFileListResource resource)
         {
             var episodeFiles = _mediaFileService.GetFiles(resource.EpisodeFileIds);
+
+            if (!episodeFiles.Any())
+            {
+                return new { };
+            }
+
             var series = _seriesService.GetSeries(episodeFiles.First().SeriesId);
 
             foreach (var episodeFile in episodeFiles)
@@ -222,6 +233,11 @@ namespace Sonarr.Api.V3.EpisodeFiles
             }
 
             _mediaFileService.Update(episodeFiles);
+
+            if (!episodeFiles.Any())
+            {
+                return Accepted(new List<EpisodeFileResource>());
+            }
 
             var series = _seriesService.GetSeries(episodeFiles.First().SeriesId);
 
