@@ -58,14 +58,48 @@ check_prerequisites() {
         exit 1
     fi
 
-    # Check if logged in to GitHub Container Registry
-    if ! docker login ghcr.io --get-login &>/dev/null; then
-        log_warning "Not logged in to ghcr.io. Attempting login..."
+    # Check if logged in to GitHub Container Registry.
+    # "docker login --get-login" was removed in newer Docker releases, so probe the
+    # registry instead: reading our own package requires working credentials.
+    if ! docker manifest inspect "${DOCKER_REGISTRY}/${IMAGE_NAME}:latest" &>/dev/null; then
+        log_warning "Not authenticated to ghcr.io (or the package does not exist yet)."
         log_info "Use a GitHub PAT with 'write:packages' scope as the password"
-        docker login ghcr.io
+
+        if [ -t 0 ]; then
+            docker login ghcr.io
+        else
+            log_error "Not running interactively; run 'docker login ghcr.io' first."
+            exit 1
+        fi
     fi
 
     log_success "Prerequisites check passed"
+}
+
+# Run the unit test suite before anything is published
+run_tests() {
+    if [ "${SKIP_TESTS:-0}" = "1" ]; then
+        log_warning "SKIP_TESTS=1 set, skipping tests"
+        return
+    fi
+
+    log_info "Running unit tests..."
+
+    # Run in the SDK image so the suite does not depend on a local .NET install.
+    if ! docker run --rm \
+        -v "$PROJECT_ROOT":/src -w /src \
+        -e DOTNET_CLI_HOME=/tmp -e HOME=/tmp -e NUGET_PACKAGES=/tmp/nuget \
+        -e DOTNET_CLI_TELEMETRY_OPTOUT=1 -e DOTNET_NOLOGO=1 \
+        --user "$(id -u):$(id -g)" \
+        mcr.microsoft.com/dotnet/sdk:10.0 \
+        dotnet test src/NzbDrone.Core.Test/Sonarr.Core.Test.csproj \
+            -p:TreatWarningsAsErrors=false -p:NuGetAudit=false; then
+        log_error "Tests failed. Refusing to build and push."
+        log_info "Override with SKIP_TESTS=1 if you really mean to."
+        exit 1
+    fi
+
+    log_success "Tests passed"
 }
 
 # Setup buildx builder
@@ -132,6 +166,9 @@ main() {
 
     # Check prerequisites
     check_prerequisites
+
+    # Never ship what we have not tested
+    run_tests
 
     # Setup buildx
     setup_buildx
