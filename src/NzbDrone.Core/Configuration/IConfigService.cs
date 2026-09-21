@@ -75,6 +75,7 @@ namespace NzbDrone.Core.Configuration
 
         // Metadata
         string TmdbApiKey { get; set; }
+        string OriginalTitleLanguages { get; set; }
 
         // Internal
         bool CleanupMetadataImages { get; set; }
