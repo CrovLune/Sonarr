@@ -211,9 +211,10 @@ public class SeriesController : RestControllerWithSignalR<SeriesResource, NzbDro
 
         var model = seriesResource.ToModel(series);
 
+        // Updating raises SeriesEditedEvent, which broadcasts the persisted resource. Only a
+        // subset of the properties are applied when updating, so broadcasting anything derived
+        // from the submitted resource here would push values that were never stored.
         _seriesService.UpdateSeries(model);
-
-        BroadcastResourceChange(ModelAction.Updated, seriesResource);
 
         return Accepted(seriesResource.Id);
     }
@@ -235,9 +236,9 @@ public class SeriesController : RestControllerWithSignalR<SeriesResource, NzbDro
 
             season.Monitored = seasonResource.Monitored;
 
+            // Updating raises SeriesEditedEvent, which broadcasts the persisted resource with
+            // its covers mapped to local urls.
             _seriesService.UpdateSeries(series);
-
-            BroadcastResourceChange(ModelAction.Updated, series.ToResource());
 
             return season.ToResource();
         }

@@ -660,6 +660,12 @@ interface ToggleSeasonMonitoredPayload {
   monitored: boolean;
 }
 
+// Only the updated season is returned, without its statistics or images.
+interface ToggleSeasonMonitoredResponse {
+  seasonNumber: number;
+  monitored: boolean;
+}
+
 interface UpdateSeriesMonitorPayload {
   series: {
     id: number;
@@ -805,40 +811,34 @@ export const useToggleSeasonMonitored = (seriesId: number) => {
   const queryClient = useQueryClient();
 
   const { mutate, isPending, error } = useApiMutation<
-    Series,
+    ToggleSeasonMonitoredResponse,
     ToggleSeasonMonitoredPayload
   >({
     path: `/series/${seriesId}/season`,
     method: 'PUT',
     mutationOptions: {
-      onSuccess: (updatedSeries) => {
+      onSuccess: (updatedSeason) => {
         queryClient.setQueryData<Series[]>(['/series'], (oldSeries) => {
           if (!oldSeries) {
             return oldSeries;
           }
 
           return oldSeries.map((series) => {
-            if (series.id === updatedSeries.id) {
-              return {
-                ...series,
-                seasons: series.seasons.map((season) => {
-                  const updatedSeason = updatedSeries.seasons.find(
-                    (s) => s.seasonNumber === season.seasonNumber
-                  );
-
-                  if (updatedSeason) {
-                    return {
-                      ...season,
-                      ...updatedSeason,
-                    };
-                  }
-
-                  return season;
-                }),
-              };
+            if (series.id !== seriesId) {
+              return series;
             }
 
-            return series;
+            return {
+              ...series,
+              seasons: series.seasons.map((season) => {
+                // The endpoint responds with the updated season only and
+                // doesn't include its statistics, so only the monitored
+                // state can be applied here.
+                return season.seasonNumber === updatedSeason.seasonNumber
+                  ? { ...season, monitored: updatedSeason.monitored }
+                  : season;
+              }),
+            };
           });
         });
       },
