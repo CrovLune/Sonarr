@@ -442,7 +442,12 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
                     var httpRequest = new HttpRequest($"https://api.themoviedb.org/3/tv/{tmdbId}/season/{seasonNumber}?language={isoLanguage.TwoLetterCode}")
                     {
                         AllowAutoRedirect = true,
-                        SuppressHttpError = true
+                        SuppressHttpError = true,
+
+                        // Seasons are fetched one after another, and AddSeriesService discards the
+                        // episodes entirely, so a stalled TMDB must not hold up adding a series for
+                        // the dispatcher's 100 second default per season.
+                        RequestTimeout = TimeSpan.FromSeconds(15)
                     };
 
                     httpRequest.Headers.Add("Authorization", $"Bearer {tmdbApiKey}");

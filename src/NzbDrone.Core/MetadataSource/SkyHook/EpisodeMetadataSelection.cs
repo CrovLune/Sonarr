@@ -72,21 +72,24 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
                 return new EpisodeMetadata(metadataTitle, metadataOverview);
             }
 
+            // Only ever replaced with something better. Clearing a numbered title would store it as
+            // "TBA", and EpisodeTitleSpecification only exempts an episode from the TBA rejection
+            // once it aired more than 48 hours ago - which an episode with no air date never does,
+            // so the import would be blocked for good.
             var title = metadataTitle;
 
             if (IsPlaceholderTitle(title))
             {
-                title = IsPlaceholderTitle(supplementaryTitle) ? null : supplementaryTitle;
-            }
-
-            // Specials are excluded because they are genuinely titled when they exist, and an unaired
-            // episode keeps its TBA because its title really is still to be announced.
-            if (title.IsNullOrWhiteSpace() &&
-                seasonNumber > 0 &&
-                airDateUtc.HasValue &&
-                airDateUtc.Value <= utcNow)
-            {
-                title = $"{EpisodeWord(originalLanguage)} {episodeNumber}";
+                if (!IsPlaceholderTitle(supplementaryTitle))
+                {
+                    title = supplementaryTitle;
+                }
+                else if (seasonNumber > 0 && airDateUtc.HasValue && airDateUtc.Value <= utcNow)
+                {
+                    // Specials are excluded because they are genuinely titled when they exist, and an
+                    // unaired episode keeps its TBA because its title really is still to be announced.
+                    title = $"{EpisodeWord(originalLanguage)} {episodeNumber}";
+                }
             }
 
             var overview = metadataOverview.IsNullOrWhiteSpace() ? supplementaryOverview : metadataOverview;

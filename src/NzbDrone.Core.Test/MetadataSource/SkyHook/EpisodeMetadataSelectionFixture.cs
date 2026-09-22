@@ -159,6 +159,39 @@ namespace NzbDrone.Core.Test.MetadataSource.SkyHook
             Select(null, null, seasonNumber: 0).Title.Should().BeNull();
         }
 
+        // A numbered metadata title carries no more information than TBA, but it is still better
+        // than the TBA that clearing it would produce: RefreshEpisodeService stores a null title as
+        // "TBA", and EpisodeTitleSpecification only exempts an episode from the TBA rejection once
+        // it has aired more than 48 hours ago, which an episode with no air date never does.
+        [Test]
+        public void should_keep_a_numbered_metadata_title_when_the_air_date_is_unknown()
+        {
+            EpisodeMetadataSelection.Select(
+                "Серия 5",
+                null,
+                null,
+                null,
+                1,
+                5,
+                Language.Russian,
+                Configured,
+                null,
+                Now)
+                .Title.Should().Be("Серия 5");
+        }
+
+        [Test]
+        public void should_keep_a_numbered_metadata_title_for_specials()
+        {
+            Select("Episode 3", null, seasonNumber: 0).Title.Should().Be("Episode 3");
+        }
+
+        [Test]
+        public void should_keep_a_numbered_metadata_title_when_the_episode_has_not_aired()
+        {
+            Select("Episode 5", null, NotAired).Title.Should().Be("Episode 5");
+        }
+
         [Test]
         public void should_leave_titles_alone_when_original_language_is_not_configured()
         {
