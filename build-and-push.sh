@@ -1,6 +1,6 @@
 #!/bin/bash
-# Multi-architecture build and push script for GitHub Container Registry
-# Builds for linux/amd64 and linux/arm64 and pushes to ghcr.io
+# Build and push script for GitHub Container Registry
+# Builds for the platforms in PLATFORMS (currently linux/amd64) and pushes to ghcr.io
 
 set -e
 
@@ -157,7 +157,7 @@ build_sonarr() {
 # Main execution
 main() {
     echo "================================================"
-    echo "🚀 Sonarr Multi-Architecture Docker Build & Push"
+    echo "🚀 Sonarr Docker Build & Push"
     echo "================================================"
     echo
 
