@@ -69,10 +69,17 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
                 }
             }
 
-            var episodes = httpResponse.Resource.Episodes.Select(MapEpisode);
             var series = MapSeries(httpResponse.Resource);
 
-            return new Tuple<Series, List<Episode>>(series, episodes.ToList());
+            var configuredLanguages = OriginalTitleSelection.ParseLanguages(_configService.OriginalTitleLanguages);
+            var supplementaryEpisodes = FetchEpisodesFromTmdb(httpResponse.Resource, series.OriginalLanguage, configuredLanguages);
+            var utcNow = DateTime.UtcNow;
+
+            var episodes = httpResponse.Resource.Episodes
+                                                .Select(episode => MapEpisode(episode, series.OriginalLanguage, configuredLanguages, supplementaryEpisodes, utcNow))
+                                                .ToList();
+
+            return new Tuple<Series, List<Episode>>(series, episodes);
         }
 
         public List<Series> SearchForNewSeriesByImdbId(string imdbId)
@@ -295,15 +302,33 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
             return newActor;
         }
 
-        private static Episode MapEpisode(EpisodeResource oracleEpisode)
+        private static Episode MapEpisode(EpisodeResource oracleEpisode,
+                                          Language originalLanguage,
+                                          IReadOnlyCollection<Language> languages,
+                                          IReadOnlyDictionary<(int Season, int Episode), TmdbEpisodeResource> supplementaryEpisodes,
+                                          DateTime utcNow)
         {
+            supplementaryEpisodes.TryGetValue((oracleEpisode.SeasonNumber, oracleEpisode.EpisodeNumber), out var supplementary);
+
+            var metadata = EpisodeMetadataSelection.Select(
+                oracleEpisode.Title,
+                oracleEpisode.Overview,
+                supplementary?.Name,
+                supplementary?.Overview,
+                oracleEpisode.SeasonNumber,
+                oracleEpisode.EpisodeNumber,
+                originalLanguage,
+                languages,
+                oracleEpisode.AirDateUtc,
+                utcNow);
+
             var episode = new Episode();
             episode.TvdbId = oracleEpisode.TvdbId;
-            episode.Overview = oracleEpisode.Overview;
+            episode.Overview = metadata.Overview;
             episode.SeasonNumber = oracleEpisode.SeasonNumber;
             episode.EpisodeNumber = oracleEpisode.EpisodeNumber;
             episode.AbsoluteEpisodeNumber = oracleEpisode.AbsoluteEpisodeNumber;
-            episode.Title = oracleEpisode.Title;
+            episode.Title = metadata.Title;
             episode.AiredAfterSeasonNumber = oracleEpisode.AiredAfterSeasonNumber;
             episode.AiredBeforeSeasonNumber = oracleEpisode.AiredBeforeSeasonNumber;
             episode.AiredBeforeEpisodeNumber = oracleEpisode.AiredBeforeEpisodeNumber;
@@ -370,6 +395,81 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
                 RemoteUrl = arg.Url,
                 CoverType = MapCoverType(arg.CoverType)
             };
+        }
+
+        /// <summary>
+        /// TheTVDB only serves English, and its English records for series in the configured
+        /// languages routinely carry no episode names or overviews at all. TMDB holds that data in
+        /// the show's own language, so it is pulled in per season to fill the gaps.
+        /// </summary>
+        private IReadOnlyDictionary<(int Season, int Episode), TmdbEpisodeResource> FetchEpisodesFromTmdb(ShowResource show, Language originalLanguage, IReadOnlyCollection<Language> languages)
+        {
+            var supplementary = new Dictionary<(int Season, int Episode), TmdbEpisodeResource>();
+
+            if (originalLanguage == null || languages == null || languages.Count == 0 || !languages.Contains(originalLanguage))
+            {
+                return supplementary;
+            }
+
+            var tmdbApiKey = _configService.TmdbApiKey;
+
+            if (tmdbApiKey.IsNullOrWhiteSpace() || !show.TmdbId.HasValue || show.TmdbId.Value <= 0)
+            {
+                _logger.Debug("FetchEpisodesFromTmdb: Skipping - ApiKey empty: {0} TmdbId: {1}", tmdbApiKey.IsNullOrWhiteSpace(), show.TmdbId);
+                return supplementary;
+            }
+
+            var isoLanguage = IsoLanguages.Get(originalLanguage);
+
+            if (isoLanguage == null)
+            {
+                _logger.Debug("FetchEpisodesFromTmdb: No ISO code for '{0}', skipping TMDB lookup", originalLanguage);
+                return supplementary;
+            }
+
+            var tmdbId = show.TmdbId.Value;
+
+            var seasonNumbers = show.Episodes.Select(episode => episode.SeasonNumber)
+                                             .Where(seasonNumber => seasonNumber > 0)
+                                             .Distinct()
+                                             .OrderBy(seasonNumber => seasonNumber)
+                                             .ToList();
+
+            foreach (var seasonNumber in seasonNumbers)
+            {
+                try
+                {
+                    var httpRequest = new HttpRequest($"https://api.themoviedb.org/3/tv/{tmdbId}/season/{seasonNumber}?language={isoLanguage.TwoLetterCode}")
+                    {
+                        AllowAutoRedirect = true,
+                        SuppressHttpError = true
+                    };
+
+                    httpRequest.Headers.Add("Authorization", $"Bearer {tmdbApiKey}");
+
+                    var response = _httpClient.Get<TmdbSeasonResource>(httpRequest);
+
+                    if (response.HasHttpError)
+                    {
+                        _logger.Warn("TMDB season request failed with status {0} for TmdbId {1} season {2}", response.StatusCode, tmdbId, seasonNumber);
+                        continue;
+                    }
+
+                    foreach (var episode in response.Resource?.Episodes ?? new List<TmdbEpisodeResource>())
+                    {
+                        supplementary[(seasonNumber, episode.EpisodeNumber)] = episode;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Supplementary data only - a TMDB outage must not fail the series refresh.
+                    _logger.Warn(ex, "Failed to fetch episodes from TMDB for TmdbId {0} season {1}", tmdbId, seasonNumber);
+                }
+            }
+
+            _logger.Debug("FetchEpisodesFromTmdb: Found {0} episodes across {1} seasons for TmdbId {2}", supplementary.Count, seasonNumbers.Count, tmdbId);
+
+            return supplementary;
         }
 
         private string FetchOriginalTitleFromTmdb(ShowResource show)
