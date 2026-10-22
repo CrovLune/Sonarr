@@ -1,4 +1,3 @@
-using NzbDrone.Common.Extensions;
 using NzbDrone.Core.Configuration;
 using NzbDrone.Core.MediaFiles;
 using NzbDrone.Core.MediaFiles.EpisodeImport;
@@ -23,6 +22,7 @@ namespace Sonarr.Api.V3.Config
         public string ChownGroup { get; set; }
 
         public EpisodeTitleRequiredType EpisodeTitleRequired { get; set; }
+        public bool SkipFreeSpaceCheckWhenGrabbing { get; set; }
         public bool SkipFreeSpaceCheckWhenImporting { get; set; }
         public int MinimumFreeSpaceWhenImporting { get; set; }
         public bool CopyUsingHardlinks { get; set; }
@@ -34,7 +34,6 @@ namespace Sonarr.Api.V3.Config
         public string UserRejectedExtensions { get; set; }
         public SeasonPackUpgradeType SeasonPackUpgrade { get; set; }
         public double SeasonPackUpgradeThreshold { get; set; }
-        public string TmdbApiKey { get; set; }
     }
 
     public static class MediaManagementConfigResourceMapper
@@ -58,6 +57,7 @@ namespace Sonarr.Api.V3.Config
 
                 EpisodeTitleRequired = model.EpisodeTitleRequired,
                 SkipFreeSpaceCheckWhenImporting = model.SkipFreeSpaceCheckWhenImporting,
+                SkipFreeSpaceCheckWhenGrabbing = model.SkipFreeSpaceCheckWhenGrabbing,
                 MinimumFreeSpaceWhenImporting = model.MinimumFreeSpaceWhenImporting,
                 CopyUsingHardlinks = model.CopyUsingHardlinks,
                 UseScriptImport = model.UseScriptImport,
@@ -67,12 +67,7 @@ namespace Sonarr.Api.V3.Config
                 EnableMediaInfo = model.EnableMediaInfo,
                 UserRejectedExtensions = model.UserRejectedExtensions,
                 SeasonPackUpgrade = model.SeasonPackUpgrade,
-                SeasonPackUpgradeThreshold = model.SeasonPackUpgradeThreshold,
-                TmdbApiKey = model.TmdbApiKey.IsNotNullOrWhiteSpace()
-                    ? model.TmdbApiKey.Length > 4
-                        ? ConfigService.TmdbApiKeyMask + model.TmdbApiKey[^4..]
-                        : ConfigService.TmdbApiKeyMask
-                    : string.Empty
+                SeasonPackUpgradeThreshold = model.SeasonPackUpgradeThreshold
             };
         }
     }

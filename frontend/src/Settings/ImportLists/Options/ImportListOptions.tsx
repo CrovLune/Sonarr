@@ -1,25 +1,23 @@
 import React, { useCallback, useEffect } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
 import Alert from 'Components/Alert';
 import FieldSet from 'Components/FieldSet';
 import Form from 'Components/Form/Form';
-import FormGroup from 'Components/Form/FormGroup';
-import FormInputGroup from 'Components/Form/FormInputGroup';
+import FormInput from 'Components/Form/FormInput';
+import FormInputHelpText from 'Components/Form/FormInputHelpText';
 import FormLabel from 'Components/Form/FormLabel';
+import FormRow from 'Components/Form/FormRow';
 import { EnhancedSelectInputValue } from 'Components/Form/Select/EnhancedSelectInput';
 import LoadingIndicator from 'Components/Loading/LoadingIndicator';
 import { inputTypes, kinds } from 'Helpers/Props';
 import { useShowAdvancedSettings } from 'Settings/advancedSettingsStore';
-import { clearPendingChanges } from 'Store/Actions/baseActions';
+import { InputChanged } from 'typings/inputs';
 import {
-  fetchImportListOptions,
-  saveImportListOptions,
-  setImportListOptionsValue,
-} from 'Store/Actions/settingsActions';
-import createSettingsSectionSelector from 'Store/Selectors/createSettingsSectionSelector';
+  OnChildStateChange,
+  SetChildSave,
+} from 'typings/Settings/SettingsState';
 import translate from 'Utilities/String/translate';
+import { useManageImportListSettings } from './useImportListSettings';
 
-const SECTION = 'importListOptions';
 const cleanLibraryLevelOptions: EnhancedSelectInputValue<string>[] = [
   {
     key: 'disabled',
@@ -48,102 +46,104 @@ const cleanLibraryLevelOptions: EnhancedSelectInputValue<string>[] = [
 ];
 
 interface ImportListOptionsProps {
-  setChildSave(saveCallback: () => void): void;
-  onChildStateChange(payload: unknown): void;
+  setChildSave: SetChildSave;
+  onChildStateChange: OnChildStateChange;
 }
 
 function ImportListOptions({
   setChildSave,
   onChildStateChange,
 }: ImportListOptionsProps) {
-  const dispatch = useDispatch();
   const showAdvancedSettings = useShowAdvancedSettings();
 
   const {
-    isSaving,
-    hasPendingChanges,
     isFetching,
+    isFetched,
+    isSaving,
     error,
     settings,
     hasSettings,
-  } = useSelector(createSettingsSectionSelector(SECTION));
+    hasPendingChanges,
+    saveSettings,
+    updateSetting,
+  } = useManageImportListSettings();
 
-  const { listSyncLevel, listSyncTag } = settings;
-
-  const onInputChange = useCallback(
-    ({ name, value }: { name: string; value: unknown }) => {
-      // @ts-expect-error 'setImportListOptionsValue' isn't typed yet
-      dispatch(setImportListOptionsValue({ name, value }));
+  const handleInputChange = useCallback(
+    ({ name, value }: InputChanged) => {
+      // @ts-expect-error - InputChanged name/value are not typed as keyof ImportListSettingsModel
+      updateSetting(name, value);
     },
-    [dispatch]
+    [updateSetting]
   );
 
-  const onTagChange = useCallback(
-    ({ name, value }: { name: string; value: number[] }) => {
-      const id = value.length === 0 ? 0 : value.pop();
-      // @ts-expect-error 'setImportListOptionsValue' isn't typed yet
-      dispatch(setImportListOptionsValue({ name, value: id }));
+  const handleTagChange = useCallback(
+    ({ value }: { name: string; value: number[] }) => {
+      const id = value.length === 0 ? 0 : value[value.length - 1];
+      updateSetting('listSyncTag', id);
     },
-    [dispatch]
+    [updateSetting]
   );
 
   useEffect(() => {
-    dispatch(fetchImportListOptions());
-    setChildSave(() => dispatch(saveImportListOptions()));
-
-    return () => {
-      dispatch(clearPendingChanges({ section: `settings.${SECTION}` }));
-    };
-  }, [dispatch, setChildSave]);
+    setChildSave(saveSettings);
+  }, [saveSettings, setChildSave]);
 
   useEffect(() => {
     onChildStateChange({
       isSaving,
       hasPendingChanges,
     });
-  }, [onChildStateChange, isSaving, hasPendingChanges]);
+  }, [hasPendingChanges, isSaving, onChildStateChange]);
 
   if (!showAdvancedSettings) {
     return null;
   }
 
   return (
-    <FieldSet legend={translate('Options')}>
+    <FieldSet
+      legend={translate('Options')}
+      caption={translate('ImportListOptionsCaption')}
+    >
       {isFetching ? <LoadingIndicator /> : null}
 
       {!isFetching && error ? (
         <Alert kind={kinds.DANGER}>{translate('ListOptionsLoadError')}</Alert>
       ) : null}
 
-      {hasSettings && !isFetching && !error ? (
+      {hasSettings && isFetched && !error ? (
         <Form>
-          <FormGroup advancedSettings={showAdvancedSettings} isAdvanced={true}>
+          <FormRow advancedSettings={showAdvancedSettings} isAdvanced={true}>
             <FormLabel>{translate('CleanLibraryLevel')}</FormLabel>
-            <FormInputGroup
+
+            <FormInputHelpText text={translate('ListSyncLevelHelpText')} />
+
+            <FormInput
               type={inputTypes.SELECT}
               name="listSyncLevel"
               values={cleanLibraryLevelOptions}
-              helpText={translate('ListSyncLevelHelpText')}
-              onChange={onInputChange}
-              {...listSyncLevel}
+              onChange={handleInputChange}
+              {...settings.listSyncLevel}
             />
-          </FormGroup>
+          </FormRow>
 
-          {listSyncLevel.value === 'keepAndTag' ? (
-            <FormGroup
-              advancedSettings={showAdvancedSettings}
-              isAdvanced={true}
-            >
+          {settings.listSyncLevel.value === 'keepAndTag' ? (
+            <FormRow advancedSettings={showAdvancedSettings} isAdvanced={true}>
               <FormLabel>{translate('ListSyncTag')}</FormLabel>
-              <FormInputGroup
-                {...listSyncTag}
+
+              <FormInputHelpText text={translate('ListSyncTagHelpText')} />
+
+              <FormInput
+                {...settings.listSyncTag}
                 type={inputTypes.SERIES_TAG}
                 name="listSyncTag"
-                value={listSyncTag.value === 0 ? [] : [listSyncTag.value]}
-                helpText={translate('ListSyncTagHelpText')}
-                onChange={onTagChange}
+                value={
+                  settings.listSyncTag.value === 0
+                    ? []
+                    : [settings.listSyncTag.value]
+                }
+                onChange={handleTagChange}
               />
-            </FormGroup>
+            </FormRow>
           ) : null}
         </Form>
       ) : null}

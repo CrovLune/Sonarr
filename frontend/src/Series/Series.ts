@@ -1,5 +1,7 @@
 import ModelBase from 'App/ModelBase';
+import ReleaseType from 'InteractiveImport/ReleaseType';
 import Language from 'Language/Language';
+import Quality from 'Quality/Quality';
 
 export type SeriesType = 'anime' | 'daily' | 'standard';
 export type SeriesMonitor =
@@ -34,16 +36,18 @@ export interface Statistics {
   percentOfEpisodes: number;
   previousAiring?: Date;
   releaseGroups: string[];
+  releaseTypes: ReleaseType[];
+  episodeFileQualities: Quality[];
   sizeOnDisk: number;
   totalEpisodeCount: number;
   monitoredEpisodeCount: number;
-  lastAired?: string;
 }
 
 export interface Season {
   monitored: boolean;
   seasonNumber: number;
   statistics: Statistics;
+  title?: string;
 }
 
 export interface Ratings {
@@ -65,13 +69,27 @@ export interface SeriesAddOptions {
   searchForCutoffUnmetEpisodes: boolean;
 }
 
+export interface Translation {
+  language: Language;
+  title: string;
+  overview: string;
+}
+
+export interface SeasonType {
+  name: string;
+  type: string;
+  seasonNumbers: number[];
+  episodeCount: number;
+}
+
 interface Series extends ModelBase {
   added: string;
   alternateTitles: AlternateTitle[];
   certification: string;
   cleanTitle: string;
   ended: boolean;
-  firstAired: string;
+  firstAired?: string;
+  lastAired?: string;
   genres: string[];
   images: Image[];
   imdbId?: string;
@@ -80,8 +98,10 @@ interface Series extends ModelBase {
   network: string;
   originalCountry: string;
   originalLanguage: Language;
+  language: Language;
   overview: string;
   path: string;
+  pendingPath?: string;
   previousAiring?: string;
   nextAiring?: string;
   qualityProfileId: number;
@@ -103,6 +123,9 @@ interface Series extends ModelBase {
   tvRageId: number;
   tmdbId: number;
   useSceneNumbering: boolean;
+  seasonType: string;
+  seasonTypes: SeasonType[];
+  translations: Translation[];
   year: number;
   addOptions: SeriesAddOptions;
 }

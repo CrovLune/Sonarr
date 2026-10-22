@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useHistory, useParams } from 'react-router';
+import { useNavigate, useParams } from 'react-router';
 import NotFound from 'Components/NotFound';
 import usePrevious from 'Helpers/Hooks/usePrevious';
 import useSeries from 'Series/useSeries';
@@ -9,29 +9,45 @@ import SeriesDetails from './SeriesDetails';
 function SeriesDetailsPage() {
   const { data: allSeries } = useSeries();
   const { titleSlug } = useParams<{ titleSlug: string }>();
-  const history = useHistory();
+  const navigate = useNavigate();
 
-  const seriesIndex = allSeries.findIndex(
-    (series) => series.titleSlug === titleSlug
-  );
-
-  const previousIndex = usePrevious(seriesIndex);
+  const series = allSeries.find((series) => series.titleSlug === titleSlug);
+  const seriesId = series?.id;
+  const previousSeriesId = usePrevious(seriesId);
+  const previousTitleSlug = usePrevious(titleSlug);
 
   useEffect(() => {
     if (
-      seriesIndex === -1 &&
-      previousIndex !== -1 &&
-      previousIndex !== undefined
+      seriesId !== undefined ||
+      previousSeriesId === undefined ||
+      titleSlug !== previousTitleSlug
     ) {
-      history.push(`${window.Sonarr.urlBase}/`);
+      return;
     }
-  }, [seriesIndex, previousIndex, history]);
 
-  if (seriesIndex === -1) {
+    const renamedSeries = allSeries.find(
+      (series) => series.id === previousSeriesId
+    );
+
+    if (renamedSeries) {
+      navigate(`/series/${renamedSeries.titleSlug}`, { replace: true });
+    } else {
+      navigate('/');
+    }
+  }, [
+    allSeries,
+    seriesId,
+    previousSeriesId,
+    titleSlug,
+    previousTitleSlug,
+    navigate,
+  ]);
+
+  if (!series) {
     return <NotFound message={translate('SeriesCannotBeFound')} />;
   }
 
-  return <SeriesDetails seriesId={allSeries[seriesIndex].id} />;
+  return <SeriesDetails seriesId={series.id} />;
 }
 
 export default SeriesDetailsPage;

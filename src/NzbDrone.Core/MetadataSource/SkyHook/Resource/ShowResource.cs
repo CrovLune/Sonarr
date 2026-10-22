@@ -11,12 +11,12 @@ namespace NzbDrone.Core.MetadataSource.SkyHook.Resource
             Images = new List<ImageResource>();
             Seasons = new List<SeasonResource>();
             Episodes = new List<EpisodeResource>();
-            AlternativeTitles = new List<AlternativeTitleResource>();
+            Translations = new List<TranslationResource>();
+            SeasonTypes = new List<SeasonTypeResource>();
         }
 
         public int TvdbId { get; set; }
         public string Title { get; set; }
-        public string OriginalTitle { get; set; }
         public string Overview { get; set; }
 
         // public string Language { get; set; }
@@ -47,11 +47,7 @@ namespace NzbDrone.Core.MetadataSource.SkyHook.Resource
         public List<ImageResource> Images { get; set; }
         public List<SeasonResource> Seasons { get; set; }
         public List<EpisodeResource> Episodes { get; set; }
-        public List<AlternativeTitleResource> AlternativeTitles { get; set; }
-    }
-
-    public class AlternativeTitleResource
-    {
-        public string Title { get; set; }
+        public List<TranslationResource> Translations { get; set; }
+        public List<SeasonTypeResource> SeasonTypes { get; set; }
     }
 }

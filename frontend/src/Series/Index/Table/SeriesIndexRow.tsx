@@ -8,17 +8,18 @@ import HeartRating from 'Components/HeartRating';
 import IconButton from 'Components/Link/IconButton';
 import Link from 'Components/Link/Link';
 import SpinnerIconButton from 'Components/Link/SpinnerIconButton';
-import SeriesTagList from 'Components/SeriesTagList';
 import RelativeDateCell from 'Components/Table/Cells/RelativeDateCell';
 import VirtualTableRowCell from 'Components/Table/Cells/VirtualTableRowCell';
 import VirtualTableSelectCell from 'Components/Table/Cells/VirtualTableSelectCell';
 import Column from 'Components/Table/Column';
+import getReleaseTypeName from 'Episode/getReleaseTypeName';
 import { icons } from 'Helpers/Props';
 import useCountryName from 'Internationalization/useCountryName';
 import DeleteSeriesModal from 'Series/Delete/DeleteSeriesModal';
 import EditSeriesModal from 'Series/Edit/EditSeriesModal';
 import { Statistics } from 'Series/Series';
 import SeriesBanner from 'Series/SeriesBanner';
+import SeriesMovePending from 'Series/SeriesMovePending';
 import { useSeriesTableOptions } from 'Series/seriesOptionsStore';
 import SeriesTitleLink from 'Series/SeriesTitleLink';
 import { SelectStateInputProps } from 'typings/props';
@@ -30,7 +31,8 @@ import useSeriesIndexItem from '../useSeriesIndexItem';
 import hasGrowableColumns from './hasGrowableColumns';
 import SeasonsCell from './SeasonsCell';
 import SeriesStatusCell from './SeriesStatusCell';
-import styles from './SeriesIndexRow.css';
+import TagsCell from './TagsCell';
+import styles from './SeriesIndexRow.module.css';
 
 interface SeriesIndexRowProps {
   seriesId: number;
@@ -113,6 +115,8 @@ function SeriesIndexRow(props: SeriesIndexRowProps) {
     [toggleSelected]
   );
 
+  const nextAiring = series?.nextAiring;
+
   if (!series) {
     return null;
   }
@@ -124,7 +128,7 @@ function SeriesIndexRow(props: SeriesIndexRowProps) {
     status,
     path,
     titleSlug,
-    nextAiring,
+    pendingPath,
     previousAiring,
     added,
     statistics = {} as Statistics,
@@ -136,6 +140,9 @@ function SeriesIndexRow(props: SeriesIndexRowProps) {
     certification,
     year,
     useSceneNumbering,
+    language,
+    seasonType,
+    seasonTypes,
     genres = [],
     ratings,
     seasons = [],
@@ -149,6 +156,8 @@ function SeriesIndexRow(props: SeriesIndexRowProps) {
     totalEpisodeCount = 0,
     sizeOnDisk = 0,
     releaseGroups = [],
+    releaseTypes = [],
+    episodeFileQualities = [],
   } = statistics;
 
   return (
@@ -205,9 +214,9 @@ function SeriesIndexRow(props: SeriesIndexRowProps) {
                     onLoad={onBannerLoad}
                   />
 
-                  {hasBannerError && (
+                  {hasBannerError ? (
                     <div className={styles.overlayTitle}>{title}</div>
-                  )}
+                  ) : null}
                 </Link>
               ) : (
                 <SeriesTitleLink titleSlug={titleSlug} title={title} />
@@ -251,12 +260,22 @@ function SeriesIndexRow(props: SeriesIndexRowProps) {
         if (name === 'qualityProfileId') {
           return (
             <VirtualTableRowCell key={name} className={styles[name]}>
-              {qualityProfile?.name ?? ''}
+              <span className={styles.qualityChip}>
+                {qualityProfile?.name ?? ''}
+              </span>
             </VirtualTableRowCell>
           );
         }
 
         if (name === 'nextAiring') {
+          if (!nextAiring) {
+            return (
+              <VirtualTableRowCell key={name} className={styles[name]}>
+                <span className={styles.nextAiringEmpty}>—</span>
+              </VirtualTableRowCell>
+            );
+          }
+
           return (
             // eslint-disable-next-line @typescript-eslint/ban-ts-comment
             // @ts-ignore ts(2739)
@@ -365,9 +384,27 @@ function SeriesIndexRow(props: SeriesIndexRowProps) {
         }
 
         if (name === 'episodeCount') {
+          const isComplete =
+            totalEpisodeCount > 0 && episodeFileCount >= totalEpisodeCount;
+          const fillPercent =
+            totalEpisodeCount > 0
+              ? Math.min(100, (episodeFileCount / totalEpisodeCount) * 100)
+              : 0;
+
           return (
             <VirtualTableRowCell key={name} className={styles[name]}>
-              {totalEpisodeCount}
+              <span>
+                {episodeFileCount} / {totalEpisodeCount}
+              </span>
+              <div className={styles.episodeBar}>
+                <div
+                  className={classNames(
+                    styles.episodeBarFill,
+                    isComplete && styles.episodeBarFillComplete
+                  )}
+                  style={{ width: `${fillPercent}%` }}
+                />
+              </div>
             </VirtualTableRowCell>
           );
         }
@@ -384,6 +421,13 @@ function SeriesIndexRow(props: SeriesIndexRowProps) {
           return (
             <VirtualTableRowCell key={name} className={styles[name]}>
               {path}
+
+              {pendingPath ? (
+                <SeriesMovePending
+                  className={styles.movePendingIcon}
+                  pendingPath={pendingPath}
+                />
+              ) : null}
             </VirtualTableRowCell>
           );
         }
@@ -392,6 +436,17 @@ function SeriesIndexRow(props: SeriesIndexRowProps) {
           return (
             <VirtualTableRowCell key={name} className={styles[name]}>
               {formatBytes(sizeOnDisk)}
+            </VirtualTableRowCell>
+          );
+        }
+
+        if (name === 'averageSizePerEpisode') {
+          const averageSize =
+            episodeFileCount > 0 ? sizeOnDisk / episodeFileCount : 0;
+
+          return (
+            <VirtualTableRowCell key={name} className={styles[name]}>
+              {averageSize ? formatBytes(averageSize) : null}
             </VirtualTableRowCell>
           );
         }
@@ -436,12 +491,46 @@ function SeriesIndexRow(props: SeriesIndexRowProps) {
           );
         }
 
-        if (name === 'tags') {
+        if (name === 'releaseTypes') {
+          const joinedReleaseTypes = releaseTypes
+            .map(getReleaseTypeName)
+            .join(', ');
+          const truncatedReleaseTypes =
+            releaseTypes.length > 3
+              ? `${releaseTypes
+                  .slice(0, 3)
+                  .map(getReleaseTypeName)
+                  .join(', ')}...`
+              : joinedReleaseTypes;
+
           return (
             <VirtualTableRowCell key={name} className={styles[name]}>
-              <SeriesTagList tags={tags} />
+              <span title={joinedReleaseTypes}>{truncatedReleaseTypes}</span>
             </VirtualTableRowCell>
           );
+        }
+
+        if (name === 'episodeFileQualities') {
+          const joinedQualities = episodeFileQualities
+            .map((q) => q.name)
+            .join(', ');
+          const truncatedQualities =
+            episodeFileQualities.length > 3
+              ? `${episodeFileQualities
+                  .slice(0, 3)
+                  .map((q) => q.name)
+                  .join(', ')}...`
+              : joinedQualities;
+
+          return (
+            <VirtualTableRowCell key={name} className={styles[name]}>
+              <span title={joinedQualities}>{truncatedQualities}</span>
+            </VirtualTableRowCell>
+          );
+        }
+
+        if (name === 'tags') {
+          return <TagsCell key={name} className={styles[name]} tags={tags} />;
         }
 
         if (name === 'useSceneNumbering') {
@@ -468,6 +557,23 @@ function SeriesIndexRow(props: SeriesIndexRowProps) {
           );
         }
 
+        if (name === 'language') {
+          return (
+            <VirtualTableRowCell key={name} className={styles[name]}>
+              {language.name}
+            </VirtualTableRowCell>
+          );
+        }
+
+        if (name === 'seasonType') {
+          return (
+            <VirtualTableRowCell key={name} className={styles[name]}>
+              {seasonTypes.find((s) => s.type === seasonType)?.name ??
+                seasonType}
+            </VirtualTableRowCell>
+          );
+        }
+
         if (name === 'actions') {
           return (
             <VirtualTableRowCell key={name} className={styles[name]}>
@@ -490,6 +596,7 @@ function SeriesIndexRow(props: SeriesIndexRowProps) {
               <IconButton
                 name={icons.EDIT}
                 title={translate('EditSeries')}
+                aria-label={translate('EditSeries')}
                 onPress={onEditSeriesPress}
               />
             </VirtualTableRowCell>

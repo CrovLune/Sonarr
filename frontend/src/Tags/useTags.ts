@@ -2,11 +2,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import ModelBase from 'App/ModelBase';
 import useApiMutation, {
+  addOrUpdateQueryClientItem,
   getValidationFailures,
 } from 'Helpers/Hooks/useApiMutation';
 import useApiQuery from 'Helpers/Hooks/useApiQuery';
-import { ValidationFailures } from 'Store/Selectors/selectSettings';
 import sortByProp from 'Utilities/Array/sortByProp';
+import { ValidationFailures } from 'Utilities/selectSettings';
 
 const DEFAULT_TAGS: Tag[] = [];
 
@@ -39,9 +40,7 @@ export const useTagList = () => {
 export const useSortedTagList = () => {
   const tagList = useTagList();
 
-  return useMemo(() => {
-    return tagList.sort(sortByProp('label'));
-  }, [tagList]);
+  return useMemo(() => [...tagList].sort(sortByProp('label')), [tagList]);
 };
 
 export const useAddTag = (onTagCreated?: (tag: Tag) => void) => {
@@ -56,13 +55,9 @@ export const useAddTag = (onTagCreated?: (tag: Tag) => void) => {
         setError(null);
       },
       onSuccess: (data) => {
-        queryClient.setQueryData<Tag[]>(['tag'], (oldData) => {
-          if (!oldData) {
-            return oldData;
-          }
-
-          return [...oldData, data];
-        });
+        queryClient.setQueryData<Tag[]>(['tag'], (oldData = []) =>
+          addOrUpdateQueryClientItem(oldData, data, 'id')
+        );
 
         onTagCreated?.(data);
       },

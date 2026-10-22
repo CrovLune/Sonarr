@@ -45,7 +45,9 @@ namespace NzbDrone.Core.MediaFiles.MediaInfo
                 throw new FileNotFoundException("Media file does not exist: " + filename);
             }
 
-            if (MediaFileExtensions.DiskExtensions.Contains(Path.GetExtension(filename)))
+            if (MediaFileExtensions.DiskExtensions
+                .Concat(MediaFileExtensions.StreamingExtensions)
+                .Contains(Path.GetExtension(filename)))
             {
                 return null;
             }
@@ -85,13 +87,12 @@ namespace NzbDrone.Core.MediaFiles.MediaInfo
                 mediaInfoModel.RawStreamData = string.Concat(analysis.OutputData);
 
                 mediaInfoModel.AudioStreams = analysis.AudioStreams?
-                    .Where(stream => stream.Language.IsNotNullOrWhiteSpace())
                     .OrderBy(stream => stream.Index)
                     .Select(stream =>
                     {
                         var model = new MediaInfoAudioStreamModel
                         {
-                            Language = stream.Language,
+                            Language = stream.Language.IsNotNullOrWhiteSpace() ? stream.Language : "und",
                             Format = stream.CodecName,
                             CodecId = stream.CodecTagString,
                             Profile = stream.Profile,
@@ -103,6 +104,10 @@ namespace NzbDrone.Core.MediaFiles.MediaInfo
                         if ((stream.Tags?.TryGetValue("title", out var audioTitle) ?? false) && audioTitle.IsNotNullOrWhiteSpace())
                         {
                             model.Title = audioTitle.Trim();
+                        }
+                        else if ((stream.Tags?.TryGetValue("name", out var audioName) ?? false) && audioName.IsNotNullOrWhiteSpace())
+                        {
+                            model.Title = audioName.Trim();
                         }
 
                         return  model;
@@ -123,6 +128,10 @@ namespace NzbDrone.Core.MediaFiles.MediaInfo
                         if ((stream.Tags?.TryGetValue("title", out var subtitleTitle) ?? false) && subtitleTitle.IsNotNullOrWhiteSpace())
                         {
                             model.Title = subtitleTitle.Trim();
+                        }
+                        else if ((stream.Tags?.TryGetValue("name", out var subtitleName) ?? false) && subtitleName.IsNotNullOrWhiteSpace())
+                        {
+                            model.Title = subtitleName.Trim();
                         }
 
                         if (stream.Disposition?.TryGetValue("forced", out var forcedSubtitle) ?? false)

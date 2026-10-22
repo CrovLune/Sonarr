@@ -17,7 +17,7 @@ import { SelectStateInputProps } from 'typings/props';
 import translate from 'Utilities/String/translate';
 import BlocklistDetailsModal from './BlocklistDetailsModal';
 import { useRemoveBlocklistItem } from './useBlocklist';
-import styles from './BlocklistRow.css';
+import styles from './BlocklistRow.module.css';
 
 interface BlocklistRowProps extends Blocklist {
   columns: Column[];
@@ -137,10 +137,15 @@ function BlocklistRow({
         if (name === 'actions') {
           return (
             <TableRowCell key={name} className={styles.actions}>
-              <IconButton name={icons.INFO} onPress={handleDetailsPress} />
+              <IconButton
+                name={icons.INFO}
+                aria-label={translate('Details')}
+                onPress={handleDetailsPress}
+              />
 
               <IconButton
                 title={translate('RemoveFromBlocklist')}
+                aria-label={translate('RemoveFromBlocklist')}
                 name={icons.REMOVE}
                 kind={kinds.DANGER}
                 isSpinning={isRemoving}

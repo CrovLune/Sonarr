@@ -23,9 +23,6 @@ namespace NzbDrone.Core.Configuration
 
     public class ConfigService : IConfigService
     {
-        // Prefix used when the API returns TmdbApiKey masked; never persisted back.
-        public const string TmdbApiKeyMask = "***";
-
         private readonly IConfigRepository _repository;
         private readonly IEventAggregator _eventAggregator;
         private readonly Logger _logger;
@@ -194,7 +191,13 @@ namespace NzbDrone.Core.Configuration
             set { SetValue("DownloadClientHistoryLimit", value); }
         }
 
-        // TODO: Rename to 'Skip Free Space Check'
+        public bool SkipFreeSpaceCheckWhenGrabbing
+        {
+            get { return GetValueBoolean("SkipFreeSpaceCheckWhenGrabbing", false); }
+
+            set { SetValue("SkipFreeSpaceCheckWhenGrabbing", value); }
+        }
+
         public bool SkipFreeSpaceCheckWhenImporting
         {
             get { return GetValueBoolean("SkipFreeSpaceCheckWhenImporting", false); }
@@ -372,6 +375,13 @@ namespace NzbDrone.Core.Configuration
             set { SetValue("EnableColorImpairedMode", value); }
         }
 
+        public string HeaderColor
+        {
+            get { return GetValue("HeaderColor", "fullColor"); }
+
+            set { SetValue("HeaderColor", value); }
+        }
+
         public int UILanguage
         {
             get { return GetValueInt("UILanguage", (int)Language.English); }
@@ -379,52 +389,11 @@ namespace NzbDrone.Core.Configuration
             set { SetValue("UILanguage", value); }
         }
 
-        public string TmdbApiKey
+        public int PreferredMetadataLanguage
         {
-            get
-            {
-                var value = GetValue("TmdbApiKey", string.Empty);
+            get { return GetValueInt("PreferredMetadataLanguage", (int)Language.English); }
 
-                // Older builds persisted the masked value back to the database, which shadowed
-                // the environment variable and sent "Bearer ***abcd" to TMDB. Treat any stored
-                // mask as absent so those databases heal themselves.
-                if (string.IsNullOrWhiteSpace(value) || value.StartsWith(TmdbApiKeyMask, StringComparison.Ordinal))
-                {
-                    value = Environment.GetEnvironmentVariable("SONARR__TMDB_API_KEY") ?? string.Empty;
-                }
-
-                return value;
-            }
-
-            set
-            {
-                // The API masks this key as "***" + the last 4 characters. The UI sends the
-                // masked value straight back when settings are saved, so persisting it would
-                // overwrite the real key (and shadow the SONARR__TMDB_API_KEY fallback).
-                if (value != null && value.StartsWith(TmdbApiKeyMask, StringComparison.Ordinal))
-                {
-                    return;
-                }
-
-                SetValue("TmdbApiKey", value);
-            }
-        }
-
-        public string OriginalTitleLanguages
-        {
-            get
-            {
-                var value = GetValue("OriginalTitleLanguages", string.Empty);
-
-                if (string.IsNullOrWhiteSpace(value))
-                {
-                    value = Environment.GetEnvironmentVariable("SONARR__ORIGINAL_TITLE_LANGUAGES") ?? string.Empty;
-                }
-
-                return value;
-            }
-
-            set => SetValue("OriginalTitleLanguages", value);
+            set { SetValue("PreferredMetadataLanguage", value); }
         }
 
         public bool CleanupMetadataImages

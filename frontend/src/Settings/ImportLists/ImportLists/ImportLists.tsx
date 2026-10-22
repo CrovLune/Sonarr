@@ -1,40 +1,46 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import { ImportListAppState } from 'App/State/SettingsAppState';
-import Card from 'Components/Card';
-import FieldSet from 'Components/FieldSet';
-import Icon from 'Components/Icon';
+import React, { useCallback, useMemo, useState } from 'react';
 import PageSectionContent from 'Components/Page/PageSectionContent';
-import { icons } from 'Helpers/Props';
+import SectionHeading from 'Components/SectionHeading';
+import AddCard from 'Components/SettingsCard/AddCard';
+import settingsCardStyles from 'Components/SettingsCard/SettingsCard.module.css';
 import {
-  cloneImportList,
-  fetchImportLists,
-} from 'Store/Actions/settingsActions';
-import createSortedSectionSelector from 'Store/Selectors/createSortedSectionSelector';
-import ImportListModel from 'typings/ImportList';
-import sortByProp from 'Utilities/Array/sortByProp';
+  getProviderTestStatus,
+  ProviderTestAllResult,
+} from 'Settings/ProviderTestAllResult';
+import settingsStyles from 'Settings/Settings.module.css';
+import { SelectedSchema } from 'Settings/useProviderSchema';
 import translate from 'Utilities/String/translate';
 import AddImportListModal from './AddImportListModal';
 import EditImportListModal from './EditImportListModal';
 import ImportList from './ImportList';
-import styles from './ImportLists.css';
+import { useSortedImportLists } from './useImportLists';
 
-function ImportLists() {
-  const dispatch = useDispatch();
+interface ImportListsProps {
+  testResults?: ProviderTestAllResult[];
+}
 
-  const { isFetching, isPopulated, items, error } = useSelector(
-    createSortedSectionSelector<ImportListModel, ImportListAppState>(
-      'settings.importLists',
-      sortByProp('name')
-    )
+function ImportLists({ testResults }: ImportListsProps) {
+  const { isFetching, isFetched, data, error } = useSortedImportLists();
+
+  const testResultById = useMemo(
+    () => new Map(testResults?.map((result) => [result.id, result])),
+    [testResults]
   );
 
   const [isAddImportListModalOpen, setIsAddImportListModalOpen] =
     useState(false);
   const [isEditImportListModalOpen, setIsEditImportListModalOpen] =
     useState(false);
+  const [cloneImportListId, setCloneImportListId] = useState<number | null>(
+    null
+  );
+
+  const [selectedSchema, setSelectedSchema] = useState<
+    SelectedSchema | undefined
+  >(undefined);
 
   const handleAddImportListPress = useCallback(() => {
+    setCloneImportListId(null);
     setIsAddImportListModalOpen(true);
   }, []);
 
@@ -42,51 +48,55 @@ function ImportLists() {
     setIsAddImportListModalOpen(false);
   }, []);
 
-  const handleImportListSelect = useCallback(() => {
+  const handleImportListSelect = useCallback((selected: SelectedSchema) => {
+    setSelectedSchema(selected);
     setIsAddImportListModalOpen(false);
     setIsEditImportListModalOpen(true);
   }, []);
 
   const handleEditImportListModalClose = useCallback(() => {
+    setCloneImportListId(null);
     setIsEditImportListModalOpen(false);
   }, []);
 
-  const handleCloneImportListPress = useCallback(
-    (id: number) => {
-      dispatch(cloneImportList({ id }));
-      setIsEditImportListModalOpen(true);
-    },
-    [dispatch]
-  );
-
-  useEffect(() => {
-    dispatch(fetchImportLists());
-  }, [dispatch]);
+  const handleCloneImportListPress = useCallback((id: number) => {
+    setCloneImportListId(id);
+    setIsEditImportListModalOpen(true);
+  }, []);
 
   return (
-    <FieldSet legend={translate('ImportLists')}>
+    <div className={settingsStyles.pageSection}>
+      <SectionHeading
+        title={translate('ImportLists')}
+        description={translate('ImportListsSectionDescription')}
+      />
+
       <PageSectionContent
         errorMessage={translate('ImportListsLoadError')}
         error={error}
         isFetching={isFetching}
-        isPopulated={isPopulated}
+        isPopulated={isFetched}
       >
-        <div className={styles.lists}>
-          {items.map((item) => {
+        <div className={settingsCardStyles.grid}>
+          {data.map((item) => {
             return (
               <ImportList
                 key={item.id}
                 {...item}
+                testStatus={
+                  testResults
+                    ? getProviderTestStatus(testResultById.get(item.id))
+                    : undefined
+                }
                 onCloneImportListPress={handleCloneImportListPress}
               />
             );
           })}
 
-          <Card className={styles.addList} onPress={handleAddImportListPress}>
-            <div className={styles.center}>
-              <Icon name={icons.ADD} size={45} />
-            </div>
-          </Card>
+          <AddCard
+            label={translate('AddImportList')}
+            onPress={handleAddImportListPress}
+          />
         </div>
 
         <AddImportListModal
@@ -97,10 +107,12 @@ function ImportLists() {
 
         <EditImportListModal
           isOpen={isEditImportListModalOpen}
+          cloneId={cloneImportListId ?? undefined}
+          selectedSchema={selectedSchema}
           onModalClose={handleEditImportListModalClose}
         />
       </PageSectionContent>
-    </FieldSet>
+    </div>
   );
 }
 

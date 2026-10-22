@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -93,15 +94,17 @@ namespace NzbDrone.Common.Extensions
             return CollapseSpace.Replace(text, " ").Trim();
         }
 
-        public static bool IsNullOrWhiteSpace(this string text)
+        #nullable enable
+        public static bool IsNullOrWhiteSpace([NotNullWhen(false)] this string? text)
         {
             return string.IsNullOrWhiteSpace(text);
         }
 
-        public static bool IsNotNullOrWhiteSpace(this string text)
+        public static bool IsNotNullOrWhiteSpace([NotNullWhen(true)] this string? text)
         {
             return !string.IsNullOrWhiteSpace(text);
         }
+        #nullable disable
 
         public static bool StartsWithIgnoreCase(this string text, string startsWith)
         {
@@ -232,9 +235,46 @@ namespace NzbDrone.Common.Extensions
             return parsedAddress.AddressFamily == AddressFamily.InterNetwork || parsedAddress.AddressFamily == AddressFamily.InterNetworkV6;
         }
 
+        public static bool IsLocalhostAddress(this string input)
+        {
+            if (input.IsNullOrWhiteSpace())
+            {
+                return false;
+            }
+
+            var host = input.FromUrlHost();
+
+            if (host.Equals("localhost", StringComparison.InvariantCultureIgnoreCase))
+            {
+                return true;
+            }
+
+            return IPAddress.TryParse(host, out var parsedAddress) && IPAddress.IsLoopback(parsedAddress);
+        }
+
         public static string ToUrlHost(this string input)
         {
-            return input.Contains(':') ? $"[{input}]" : input;
+            if (input.IsNullOrWhiteSpace() || !input.Contains(':') || IsBracketed(input))
+            {
+                return input;
+            }
+
+            return $"[{input}]";
+        }
+
+        public static string FromUrlHost(this string input)
+        {
+            if (input.IsNullOrWhiteSpace() || !IsBracketed(input))
+            {
+                return input;
+            }
+
+            return input[1..^1];
+        }
+
+        private static bool IsBracketed(string input)
+        {
+            return input.StartsWith('[') && input.EndsWith(']');
         }
 
         public static string Reverse(this string text)

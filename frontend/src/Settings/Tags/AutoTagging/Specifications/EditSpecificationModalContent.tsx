@@ -1,11 +1,10 @@
-import React, { useCallback } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import { AutoTaggingSpecificationAppState } from 'App/State/SettingsAppState';
+import React, { useCallback, useMemo } from 'react';
 import Alert from 'Components/Alert';
 import Form from 'Components/Form/Form';
-import FormGroup from 'Components/Form/FormGroup';
-import FormInputGroup from 'Components/Form/FormInputGroup';
+import FormInput from 'Components/Form/FormInput';
+import FormInputHelpText from 'Components/Form/FormInputHelpText';
 import FormLabel from 'Components/Form/FormLabel';
+import FormRow from 'Components/Form/FormRow';
 import ProviderFieldFormGroup from 'Components/Form/ProviderFieldFormGroup';
 import Button from 'Components/Link/Button';
 import SpinnerErrorButton from 'Components/Link/SpinnerErrorButton';
@@ -14,80 +13,128 @@ import ModalBody from 'Components/Modal/ModalBody';
 import ModalContent from 'Components/Modal/ModalContent';
 import ModalFooter from 'Components/Modal/ModalFooter';
 import ModalHeader from 'Components/Modal/ModalHeader';
+import { usePendingChangesStore } from 'Helpers/Hooks/usePendingChangesStore';
+import { usePendingFieldsStore } from 'Helpers/Hooks/usePendingFieldsStore';
 import { inputTypes, kinds } from 'Helpers/Props';
 import { useShowAdvancedSettings } from 'Settings/advancedSettingsStore';
-import {
-  clearAutoTaggingSpecificationPending,
-  saveAutoTaggingSpecification,
-  setAutoTaggingSpecificationFieldValue,
-  setAutoTaggingSpecificationValue,
-} from 'Store/Actions/settingsActions';
-import { createProviderSettingsSelectorHook } from 'Store/Selectors/createProviderSettingsSelector';
-import { AutoTaggingSpecification } from 'typings/AutoTagging';
 import { InputChanged } from 'typings/inputs';
+import selectSettings from 'Utilities/selectSettings';
 import translate from 'Utilities/String/translate';
-import styles from './EditSpecificationModalContent.css';
+import { AutoTaggingSpecification } from '../useAutoTaggings';
+import styles from './EditSpecificationModalContent.module.css';
 
-export interface EditSpecificationModalContentProps {
-  id?: number;
+interface EditSpecificationModalContentProps {
+  specification: AutoTaggingSpecification;
+  onSave: (spec: AutoTaggingSpecification) => void;
   onDeleteSpecificationPress?: () => void;
   onModalClose: () => void;
 }
 
 function EditSpecificationModalContent({
-  id,
+  specification,
+  onSave,
   onDeleteSpecificationPress,
   onModalClose,
 }: EditSpecificationModalContentProps) {
   const advancedSettings = useShowAdvancedSettings();
 
-  const { item, ...otherFormProps } = useSelector(
-    createProviderSettingsSelectorHook<
-      AutoTaggingSpecification,
-      AutoTaggingSpecificationAppState
-    >('autoTaggingSpecifications', id)
-  );
+  const { pendingChanges, setPendingChange, clearPendingChanges } =
+    usePendingChangesStore<AutoTaggingSpecification>({});
 
-  const dispatch = useDispatch();
+  const {
+    pendingFields,
+    setPendingField,
+    hasPendingFields,
+    clearPendingFields,
+  } = usePendingFieldsStore();
+
+  const {
+    settings: item,
+    validationErrors,
+    validationWarnings,
+  } = useMemo(() => {
+    const combinedPendingChanges = hasPendingFields
+      ? {
+          ...pendingChanges,
+          fields: Object.fromEntries(pendingFields),
+        }
+      : pendingChanges;
+
+    return selectSettings(specification, combinedPendingChanges);
+  }, [specification, pendingChanges, pendingFields, hasPendingFields]);
 
   const onInputChange = useCallback(
     ({ name, value }: InputChanged) => {
-      // @ts-expect-error - actions are not typed
-      dispatch(setAutoTaggingSpecificationValue({ name, value }));
+      setPendingChange(
+        name as keyof AutoTaggingSpecification,
+        value as AutoTaggingSpecification[keyof AutoTaggingSpecification]
+      );
     },
-    [dispatch]
+    [setPendingChange]
   );
 
   const onFieldChange = useCallback(
     ({ name, value }: InputChanged) => {
-      // @ts-expect-error - actions are not typed
-      dispatch(setAutoTaggingSpecificationFieldValue({ name, value }));
+      setPendingField(name, value);
     },
-    [dispatch]
+    [setPendingField]
   );
 
+  const onDeletePress = useCallback(() => {
+    if (onDeleteSpecificationPress) {
+      onDeleteSpecificationPress();
+    }
+  }, [onDeleteSpecificationPress]);
+
   const onCancelPress = useCallback(() => {
-    dispatch(clearAutoTaggingSpecificationPending());
+    clearPendingChanges();
+    clearPendingFields();
     onModalClose();
-  }, [dispatch, onModalClose]);
+  }, [clearPendingChanges, clearPendingFields, onModalClose]);
 
   const onSavePress = useCallback(() => {
-    dispatch(saveAutoTaggingSpecification({ id }));
+    let updatedSpec: AutoTaggingSpecification = {
+      ...specification,
+      ...pendingChanges,
+    };
+
+    if (hasPendingFields) {
+      updatedSpec = {
+        ...updatedSpec,
+        fields: specification.fields.map((f) =>
+          pendingFields.has(f.name)
+            ? { ...f, value: pendingFields.get(f.name) as typeof f.value }
+            : f
+        ),
+      };
+    }
+
+    onSave(updatedSpec);
     onModalClose();
-  }, [dispatch, id, onModalClose]);
+  }, [
+    specification,
+    pendingChanges,
+    pendingFields,
+    hasPendingFields,
+    onSave,
+    onModalClose,
+  ]);
 
   const { implementationName, name, negate, required, fields } = item;
 
   return (
     <ModalContent onModalClose={onCancelPress}>
-      <ModalHeader>
-        {id
+      <ModalHeader subtitle={specification.id ? specification.name : undefined}>
+        {specification.id
           ? translate('EditConditionImplementation', { implementationName })
           : translate('AddConditionImplementation', { implementationName })}
       </ModalHeader>
 
       <ModalBody>
-        <Form {...otherFormProps}>
+        <Form
+          validationErrors={validationErrors}
+          validationWarnings={validationWarnings}
+        >
           {fields && fields.some((x) => x.label === 'Regular Expression') && (
             <Alert kind={kinds.INFO}>
               <div>
@@ -112,16 +159,16 @@ function EditSpecificationModalContent({
             </Alert>
           )}
 
-          <FormGroup>
+          <FormRow>
             <FormLabel>{translate('Name')}</FormLabel>
 
-            <FormInputGroup
+            <FormInput
               type={inputTypes.TEXT}
               name="name"
               {...name}
               onChange={onInputChange}
             />
-          </FormGroup>
+          </FormRow>
 
           {fields &&
             fields.map((field) => {
@@ -137,41 +184,47 @@ function EditSpecificationModalContent({
               );
             })}
 
-          <FormGroup>
+          <FormRow>
             <FormLabel>{translate('Negate')}</FormLabel>
 
-            <FormInputGroup
+            <FormInputHelpText
+              text={translate('AutoTaggingNegateHelpText', {
+                implementationName,
+              })}
+            />
+
+            <FormInput
               type={inputTypes.CHECK}
               name="negate"
               {...negate}
-              helpText={translate('AutoTaggingNegateHelpText', {
-                implementationName,
-              })}
               onChange={onInputChange}
             />
-          </FormGroup>
+          </FormRow>
 
-          <FormGroup>
+          <FormRow>
             <FormLabel>{translate('Required')}</FormLabel>
 
-            <FormInputGroup
+            <FormInputHelpText
+              text={translate('AutoTaggingRequiredHelpText', {
+                implementationName,
+              })}
+            />
+
+            <FormInput
               type={inputTypes.CHECK}
               name="required"
               {...required}
-              helpText={translate('AutoTaggingRequiredHelpText', {
-                implementationName,
-              })}
               onChange={onInputChange}
             />
-          </FormGroup>
+          </FormRow>
         </Form>
       </ModalBody>
       <ModalFooter>
-        {id ? (
+        {specification.id ? (
           <Button
             className={styles.deleteButton}
             kind={kinds.DANGER}
-            onPress={onDeleteSpecificationPress}
+            onPress={onDeletePress}
           >
             {translate('Delete')}
           </Button>

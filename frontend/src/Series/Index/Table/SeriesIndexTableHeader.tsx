@@ -1,13 +1,12 @@
 import classNames from 'classnames';
 import React, { useCallback } from 'react';
 import { useSelect } from 'App/Select/SelectContext';
-import IconButton from 'Components/Link/IconButton';
 import Column from 'Components/Table/Column';
+import TableOptionsButton from 'Components/Table/TableOptions/TableOptionsButton';
 import TableOptionsModalWrapper from 'Components/Table/TableOptions/TableOptionsModalWrapper';
 import VirtualTableHeader from 'Components/Table/VirtualTableHeader';
 import VirtualTableHeaderCell from 'Components/Table/VirtualTableHeaderCell';
 import VirtualTableSelectAllHeaderCell from 'Components/Table/VirtualTableSelectAllHeaderCell';
-import { icons } from 'Helpers/Props';
 import { SortDirection } from 'Helpers/Props/sortDirections';
 import {
   setSeriesOption,
@@ -18,7 +17,7 @@ import { CheckInputChanged } from 'typings/inputs';
 import { TableOptionsChangePayload } from 'typings/Table';
 import hasGrowableColumns from './hasGrowableColumns';
 import SeriesIndexTableOptions from './SeriesIndexTableOptions';
-import styles from './SeriesIndexTableHeader.css';
+import styles from './SeriesIndexTableHeader.module.css';
 
 interface SeriesIndexTableHeaderProps {
   showBanners: boolean;
@@ -95,7 +94,7 @@ function SeriesIndexTableHeader(props: SeriesIndexTableHeaderProps) {
                 optionsComponent={SeriesIndexTableOptions}
                 onTableOptionChange={onTableOptionChange}
               >
-                <IconButton name={icons.ADVANCED_SETTINGS} />
+                <TableOptionsButton />
               </TableOptionsModalWrapper>
             </VirtualTableHeaderCell>
           );

@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using NzbDrone.Core.Languages;
 using Sonarr.Http;
@@ -20,7 +22,8 @@ public class LanguageController : RestController<LanguageResource>
     }
 
     [HttpGet]
-    public List<LanguageResource> GetAll()
+    [Produces("application/json")]
+    public Ok<List<LanguageResource>> GetAll()
     {
         var languageResources = Language.All.Select(l => new LanguageResource
         {
@@ -30,6 +33,6 @@ public class LanguageController : RestController<LanguageResource>
                                 .OrderBy(l => l.Id > 0).ThenBy(l => l.Name)
                                 .ToList();
 
-        return languageResources;
+        return TypedResults.Ok(languageResources);
     }
 }

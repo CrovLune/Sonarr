@@ -1,13 +1,14 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import Card from 'Components/Card';
 import Label from 'Components/Label';
 import IconButton from 'Components/Link/IconButton';
 import ConfirmModal from 'Components/Modal/ConfirmModal';
-import { icons, kinds } from 'Helpers/Props';
+import { icons, kinds, sizes } from 'Helpers/Props';
 import Field from 'typings/Field';
 import translate from 'Utilities/String/translate';
+import { AutoTaggingSpecification } from '../useAutoTaggings';
 import EditSpecificationModal from './EditSpecificationModal';
-import styles from './Specification.css';
+import styles from './Specification.module.css';
 
 interface SpecificationProps {
   id: number;
@@ -17,38 +18,55 @@ interface SpecificationProps {
   negate: boolean;
   required: boolean;
   fields: Field[];
+  onSaveSpecification: (spec: AutoTaggingSpecification) => void;
   onConfirmDeleteSpecification: (specId: number) => void;
   onCloneSpecificationPress: (specId: number) => void;
 }
 
-export default function Specification({
+function Specification({
   id,
+  implementation,
   implementationName,
   name,
-  required,
   negate,
+  required,
+  fields,
+  onSaveSpecification,
   onConfirmDeleteSpecification,
   onCloneSpecificationPress,
 }: SpecificationProps) {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
+  const spec = useMemo<AutoTaggingSpecification>(
+    () => ({
+      id,
+      implementation,
+      implementationName,
+      name,
+      negate,
+      required,
+      fields,
+    }),
+    [id, implementation, implementationName, name, negate, required, fields]
+  );
+
   const onEditPress = useCallback(() => {
     setIsEditModalOpen(true);
-  }, [setIsEditModalOpen]);
+  }, []);
 
   const onEditModalClose = useCallback(() => {
     setIsEditModalOpen(false);
-  }, [setIsEditModalOpen]);
+  }, []);
 
   const onDeletePress = useCallback(() => {
     setIsEditModalOpen(false);
     setIsDeleteModalOpen(true);
-  }, [setIsEditModalOpen, setIsDeleteModalOpen]);
+  }, []);
 
   const onDeleteModalClose = useCallback(() => {
     setIsDeleteModalOpen(false);
-  }, [setIsDeleteModalOpen]);
+  }, []);
 
   const onConfirmDelete = useCallback(() => {
     onConfirmDeleteSpecification(id);
@@ -61,44 +79,58 @@ export default function Specification({
   return (
     <Card
       className={styles.autoTagging}
+      overlayClassName={styles.overlay}
       overlayContent={true}
+      aria-label={translate('EditConditionImplementation', {
+        implementationName,
+      })}
       onPress={onEditPress}
     >
       <div className={styles.nameContainer}>
         <div className={styles.name}>{name}</div>
 
-        <IconButton
-          className={styles.cloneButton}
-          title={translate('Clone')}
-          name={icons.CLONE}
-          onPress={onClonePress}
-        />
+        <div className={styles.rightCluster}>
+          <IconButton
+            className={styles.cloneButton}
+            title={translate('CloneCondition')}
+            aria-label={translate('CloneCondition')}
+            name={icons.CLONE}
+            onPress={onClonePress}
+          />
+        </div>
       </div>
 
       <div className={styles.labels}>
-        <Label kind={kinds.DEFAULT}>{implementationName}</Label>
+        <Label dot={false} kind={kinds.DEFAULT} size={sizes.MEDIUM}>
+          {implementationName}
+        </Label>
 
         {negate ? (
-          <Label kind={kinds.DANGER}>{translate('Negated')}</Label>
+          <Label kind={kinds.DANGER} size={sizes.MEDIUM}>
+            {translate('Negated')}
+          </Label>
         ) : null}
 
         {required ? (
-          <Label kind={kinds.SUCCESS}>{translate('Required')}</Label>
+          <Label kind={kinds.SUCCESS} size={sizes.MEDIUM}>
+            {translate('Required')}
+          </Label>
         ) : null}
       </div>
 
       <EditSpecificationModal
-        id={id}
         isOpen={isEditModalOpen}
-        onModalClose={onEditModalClose}
+        specification={spec}
+        onSave={onSaveSpecification}
         onDeleteSpecificationPress={onDeletePress}
+        onModalClose={onEditModalClose}
       />
 
       <ConfirmModal
         isOpen={isDeleteModalOpen}
         kind={kinds.DANGER}
-        title={translate('DeleteSpecification')}
-        message={translate('DeleteSpecificationHelpText', { name })}
+        title={translate('DeleteCondition')}
+        message={translate('DeleteConditionMessageText', { name })}
         confirmLabel={translate('Delete')}
         onConfirm={onConfirmDelete}
         onCancel={onDeleteModalClose}
@@ -106,3 +138,5 @@ export default function Specification({
     </Card>
   );
 }
+
+export default Specification;

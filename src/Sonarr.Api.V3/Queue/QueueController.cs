@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using NzbDrone.Common.Extensions;
 using NzbDrone.Core.Blocklisting;
@@ -61,7 +62,7 @@ namespace Sonarr.Api.V3.Queue
         }
 
         [NonAction]
-        public override ActionResult<QueueResource> GetResourceByIdWithErrorHandler(int id)
+        public override Results<Ok<QueueResource>, NotFound> GetResourceByIdWithErrorHandler(int id)
         {
             return base.GetResourceByIdWithErrorHandler(id);
         }
@@ -349,6 +350,11 @@ namespace Sonarr.Api.V3.Queue
                 if (downloadClient == null)
                 {
                     throw new BadRequestException();
+                }
+
+                if (!trackedDownload.DownloadItem.DownloadClientInfo.HasPostImportCategory)
+                {
+                    throw new BadRequestException($"Queue item with ID {trackedDownload.DownloadItem.DownloadId} does not support category changing.");
                 }
 
                 downloadClient.MarkItemAsImported(trackedDownload.DownloadItem);

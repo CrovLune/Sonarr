@@ -10,6 +10,7 @@ import {
 import { DateFilterValue, FilterType } from 'Helpers/Props/filterTypes';
 import { InputChanged } from 'typings/inputs';
 import sortByProp from 'Utilities/Array/sortByProp';
+import translate from 'Utilities/String/translate';
 import BoolFilterBuilderRowValue from './BoolFilterBuilderRowValue';
 import DateFilterBuilderRowValue from './DateFilterBuilderRowValue';
 import DefaultFilterBuilderRowValue from './DefaultFilterBuilderRowValue';
@@ -21,11 +22,12 @@ import ProtocolFilterBuilderRowValue from './ProtocolFilterBuilderRowValue';
 import QualityFilterBuilderRowValue from './QualityFilterBuilderRowValue';
 import QualityProfileFilterBuilderRowValue from './QualityProfileFilterBuilderRowValue';
 import QueueStatusFilterBuilderRowValue from './QueueStatusFilterBuilderRowValue';
+import ReleaseTypeFilterBuilderRowValue from './ReleaseTypeFilterBuilderRowValue';
 import SeriesFilterBuilderRowValue from './SeriesFilterBuilderRowValue';
 import SeriesStatusFilterBuilderRowValue from './SeriesStatusFilterBuilderRowValue';
 import SeriesTypeFilterBuilderRowValue from './SeriesTypeFilterBuilderRowValue';
 import TagFilterBuilderRowValue from './TagFilterBuilderRowValue';
-import styles from './FilterBuilderRow.css';
+import styles from './FilterBuilderRow.module.css';
 
 function getselectedFilterBuilderProp<T>(
   filterBuilderProps: FilterBuilderProp<T>[],
@@ -112,6 +114,9 @@ function getRowValueConnector<T>(
     case filterBuilderValueTypes.MONITORED_STATUS:
       return MonitoredStatusFilterBuilderRowValue;
 
+    case filterBuilderValueTypes.RELEASE_TYPES:
+      return ReleaseTypeFilterBuilderRowValue;
+
     case filterBuilderValueTypes.SERIES:
       return SeriesFilterBuilderRowValue;
 
@@ -136,7 +141,7 @@ interface FilterBuilderRowProps<T> {
   filterType: FilterType;
   filterCount: number;
   filterBuilderProps: FilterBuilderProp<T>[];
-  sectionItems: T[];
+  sectionItems: ReadonlyArray<T>;
   onAddPress: () => void;
   onFilterChange: (index: number, filter: PropertyFilter) => void;
   onRemovePress: (index: number) => void;
@@ -300,11 +305,16 @@ function FilterBuilderRow<T>({
       <div className={styles.actionsContainer}>
         <IconButton
           name={icons.SUBTRACT}
+          aria-label={translate('Remove')}
           isDisabled={filterCount === 1}
           onPress={handleRemovePress}
         />
 
-        <IconButton name={icons.ADD} onPress={handleAddPress} />
+        <IconButton
+          name={icons.ADD}
+          aria-label={translate('Add')}
+          onPress={handleAddPress}
+        />
       </div>
     </div>
   );

@@ -12,7 +12,7 @@ import formatBytes from 'Utilities/Number/formatBytes';
 import translate from 'Utilities/String/translate';
 import RestoreBackupModal from './RestoreBackupModal';
 import { useDeleteBackup } from './useBackups';
-import styles from './BackupRow.css';
+import styles from './BackupRow.module.css';
 
 interface BackupRowProps {
   id: number;
@@ -96,12 +96,14 @@ function BackupRow({ id, type, name, path, size, time }: BackupRowProps) {
       <TableRowCell className={styles.actions}>
         <IconButton
           title={translate('RestoreBackup')}
+          aria-label={translate('RestoreBackup')}
           name={icons.RESTORE}
           onPress={handleRestorePress}
         />
 
         <IconButton
           title={translate('DeleteBackup')}
+          aria-label={translate('DeleteBackup')}
           name={icons.DELETE}
           onPress={handleDeletePress}
         />

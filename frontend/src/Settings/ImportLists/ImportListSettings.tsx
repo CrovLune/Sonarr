@@ -1,13 +1,13 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import AppState from 'App/State/AppState';
-import PageContent from 'Components/Page/PageContent';
 import PageContentBody from 'Components/Page/PageContentBody';
-import PageToolbarButton from 'Components/Page/Toolbar/PageToolbarButton';
+import PageHeading from 'Components/Page/PageHeading';
+import { OverflowDivider } from 'Components/Page/Toolbar/Overflow';
 import PageToolbarSeparator from 'Components/Page/Toolbar/PageToolbarSeparator';
+import ToolbarItem from 'Components/Page/Toolbar/ToolbarItem';
+import StatusIndicator from 'Components/StatusIndicator';
 import { icons } from 'Helpers/Props';
-import SettingsToolbar from 'Settings/SettingsToolbar';
-import { testAllImportLists } from 'Store/Actions/settingsActions';
+import settingsStyles from 'Settings/Settings.module.css';
+import SettingsPage from 'Settings/SettingsPage';
 import {
   SaveCallback,
   SettingsStateChange,
@@ -16,13 +16,16 @@ import translate from 'Utilities/String/translate';
 import ImportListExclusions from './ImportListExclusions/ImportListExclusions';
 import ImportLists from './ImportLists/ImportLists';
 import ManageImportListsModal from './ImportLists/Manage/ManageImportListsModal';
+import { useTestAllImportLists } from './ImportLists/useImportLists';
 import ImportListOptions from './Options/ImportListOptions';
 
 function ImportListSettings() {
-  const dispatch = useDispatch();
-  const isTestingAll = useSelector(
-    (state: AppState) => state.settings.importLists.isTestingAll
-  );
+  const {
+    isTestingAllImportLists,
+    testAllImportLists,
+    testAllResults,
+    testAllError,
+  } = useTestAllImportLists();
 
   const saveOptions = useRef<() => void>();
 
@@ -55,52 +58,86 @@ function ImportListSettings() {
     saveOptions.current?.();
   }, []);
 
-  const handleTestAllIndexersPress = useCallback(() => {
-    dispatch(testAllImportLists());
-  }, [dispatch]);
+  const handleTestAllImportListsPress = useCallback(() => {
+    testAllImportLists();
+  }, [testAllImportLists]);
+
+  let testStatusLabel: string | undefined = undefined;
+
+  if (isTestingAllImportLists) {
+    testStatusLabel = translate('TestingAllImportLists');
+  } else if (testAllResults) {
+    testStatusLabel = translate('ImportListTestAllCompleted');
+  } else if (testAllError) {
+    testStatusLabel = translate('ImportListTestAllFailed');
+  }
 
   return (
-    <PageContent title={translate('ImportListSettings')}>
-      <SettingsToolbar
-        isSaving={isSaving}
-        hasPendingChanges={hasPendingChanges}
-        additionalButtons={
-          <>
+    <SettingsPage
+      title={translate('ImportListSettings')}
+      isSaving={isSaving}
+      hasPendingChanges={hasPendingChanges}
+      toolbarChildren={
+        <>
+          <OverflowDivider groupId="extras">
             <PageToolbarSeparator />
+          </OverflowDivider>
 
-            <PageToolbarButton
-              label={translate('TestAllLists')}
-              iconName={icons.TEST}
-              isSpinning={isTestingAll}
-              onPress={handleTestAllIndexersPress}
-            />
+          <ToolbarItem
+            id="test-all"
+            priority={1}
+            groupId="extras"
+            label={translate('TestAllLists')}
+            iconName={icons.TEST}
+            isSpinning={isTestingAllImportLists}
+            onPress={handleTestAllImportListsPress}
+          />
 
-            <PageToolbarButton
-              label={translate('ManageLists')}
-              iconName={icons.MANAGE}
-              onPress={handleManageImportListsPress}
-            />
-          </>
-        }
-        onSavePress={handleSavePress}
-      />
-
+          <ToolbarItem
+            id="manage"
+            priority={1}
+            groupId="extras"
+            label={translate('ManageLists')}
+            iconName={icons.MANAGE}
+            onPress={handleManageImportListsPress}
+          />
+        </>
+      }
+      onSavePress={handleSavePress}
+    >
       <PageContentBody>
-        <ImportLists />
+        {testStatusLabel ? (
+          <StatusIndicator
+            label={testStatusLabel}
+            role={testAllError ? 'alert' : 'status'}
+            aria-atomic={true}
+          >
+            <span />
+          </StatusIndicator>
+        ) : null}
 
-        <ImportListOptions
-          setChildSave={handleSetChildSave}
-          onChildStateChange={handleChildStateChange}
-        />
+        <div className={settingsStyles.section}>
+          <PageHeading
+            scope={translate('Settings')}
+            title={translate('ImportLists')}
+          />
 
-        <ImportListExclusions />
+          <ImportLists testResults={testAllResults} />
 
-        <ManageImportListsModal
-          isOpen={isManageImportListsModalOpen}
-          onModalClose={handleManageImportListsModalClose}
-        />
+          <ImportListOptions
+            setChildSave={handleSetChildSave}
+            onChildStateChange={handleChildStateChange}
+          />
+
+          <ImportListExclusions />
+
+          <ManageImportListsModal
+            isOpen={isManageImportListsModalOpen}
+            onModalClose={handleManageImportListsModalClose}
+          />
+        </div>
       </PageContentBody>
-    </PageContent>
+    </SettingsPage>
   );
 }
 

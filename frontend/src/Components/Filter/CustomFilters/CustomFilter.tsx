@@ -1,12 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useDispatch } from 'react-redux';
 import IconButton from 'Components/Link/IconButton';
 import SpinnerIconButton from 'Components/Link/SpinnerIconButton';
 import { useDeleteCustomFilter } from 'Filters/useCustomFilters';
 import usePrevious from 'Helpers/Hooks/usePrevious';
 import { icons } from 'Helpers/Props';
 import translate from 'Utilities/String/translate';
-import styles from './CustomFilter.css';
+import styles from './CustomFilter.module.css';
 
 interface CustomFilterProps {
   id: number;
@@ -23,7 +22,6 @@ function CustomFilter({
 }: CustomFilterProps) {
   const { deleteCustomFilter, isDeleting, deleteError } =
     useDeleteCustomFilter(id);
-  const dispatch = useDispatch();
   const wasDeleting = usePrevious(isDeleting);
   const [isDeletingInternal, setIsDeletingInternal] = useState(false);
 
@@ -52,14 +50,18 @@ function CustomFilter({
         dispatchSetFilter({ selectedFilterKey: 'all' });
       }
     };
-  }, [isDeletingInternal, dispatchSetFilter, dispatch]);
+  }, [isDeletingInternal, dispatchSetFilter]);
 
   return (
     <div className={styles.customFilter}>
       <div className={styles.label}>{label}</div>
 
       <div className={styles.actions}>
-        <IconButton name={icons.EDIT} onPress={handleEditPress} />
+        <IconButton
+          name={icons.EDIT}
+          aria-label={translate('Edit')}
+          onPress={handleEditPress}
+        />
 
         <SpinnerIconButton
           title={translate('RemoveFilter')}
