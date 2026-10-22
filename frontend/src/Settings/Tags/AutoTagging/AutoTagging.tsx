@@ -1,25 +1,28 @@
 import React, { useCallback, useState } from 'react';
-import Card from 'Components/Card';
 import Label from 'Components/Label';
-import IconButton from 'Components/Link/IconButton';
+import MiddleTruncate from 'Components/MiddleTruncate';
 import ConfirmModal from 'Components/Modal/ConfirmModal';
+import SettingsCard from 'Components/SettingsCard/SettingsCard';
+import settingsCardStyles from 'Components/SettingsCard/SettingsCard.module.css';
+import SettingsCardAction from 'Components/SettingsCard/SettingsCardAction';
+import SettingsCardStatus from 'Components/SettingsCard/SettingsCardStatus';
 import TagList from 'Components/TagList';
-import { icons, kinds } from 'Helpers/Props';
+import { icons, kinds, sizes } from 'Helpers/Props';
 import { Kind } from 'Helpers/Props/kinds';
 import { Tag } from 'Tags/useTags';
-import { AutoTaggingSpecification } from 'typings/AutoTagging';
 import translate from 'Utilities/String/translate';
 import EditAutoTaggingModal from './EditAutoTaggingModal';
-import styles from './AutoTagging.css';
+import {
+  AutoTaggingSpecification,
+  useDeleteAutoTagging,
+} from './useAutoTaggings';
 
 interface AutoTaggingProps {
   id: number;
   name: string;
   specifications: AutoTaggingSpecification[];
   tags: number[];
-  tagList: Tag[];
-  isDeleting: boolean;
-  onConfirmDeleteAutoTagging: (id: number) => void;
+  tagList: ReadonlyArray<Tag>;
   onCloneAutoTaggingPress: (id: number) => void;
 }
 
@@ -29,10 +32,9 @@ export default function AutoTagging({
   tags,
   tagList,
   specifications,
-  isDeleting,
-  onConfirmDeleteAutoTagging,
   onCloneAutoTaggingPress,
 }: AutoTaggingProps) {
+  const { deleteAutoTagging, isDeleting } = useDeleteAutoTagging(id);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
@@ -54,56 +56,66 @@ export default function AutoTagging({
   }, [setIsDeleteModalOpen]);
 
   const onConfirmDelete = useCallback(() => {
-    onConfirmDeleteAutoTagging(id);
-  }, [id, onConfirmDeleteAutoTagging]);
+    deleteAutoTagging();
+  }, [deleteAutoTagging]);
 
   const onClonePress = useCallback(() => {
     onCloneAutoTaggingPress(id);
   }, [id, onCloneAutoTaggingPress]);
 
   return (
-    <Card
-      className={styles.autoTagging}
-      overlayContent={true}
+    <SettingsCard
+      name={name}
+      aria-label={translate('EditAutoTagName', { name })}
+      actions={
+        <SettingsCardAction
+          title={translate('CloneAutoTag')}
+          aria-label={translate('CloneAutoTag')}
+          name={icons.CLONE}
+          onPress={onClonePress}
+        />
+      }
       onPress={onEditPress}
     >
-      <div className={styles.nameContainer}>
-        <div className={styles.name}>{name}</div>
+      <SettingsCardStatus
+        segments={[
+          translate('ConditionsCount', { count: specifications.length }),
+        ]}
+      />
 
-        <div>
-          <IconButton
-            className={styles.cloneButton}
-            title={translate('CloneAutoTag')}
-            name={icons.CLONE}
-            onPress={onClonePress}
-          />
+      {tags.length ? <TagList tags={tags} tagList={tagList} /> : null}
+
+      {specifications.length ? (
+        <div className={settingsCardStyles.labels}>
+          {specifications.map((item, index) => {
+            if (!item) {
+              return null;
+            }
+
+            let kind: Kind = 'default';
+
+            if (item.required) {
+              kind = 'success';
+            }
+
+            if (item.negate) {
+              kind = 'danger';
+            }
+
+            return (
+              <Label
+                key={index}
+                className={settingsCardStyles.truncatedLabel}
+                kind={kind}
+                size={sizes.MEDIUM}
+                dot={item.required || item.negate}
+              >
+                <MiddleTruncate text={item.name} />
+              </Label>
+            );
+          })}
         </div>
-      </div>
-
-      <TagList tags={tags} tagList={tagList} />
-
-      <div>
-        {specifications.map((item, index) => {
-          if (!item) {
-            return null;
-          }
-
-          let kind: Kind = 'default';
-
-          if (item.required) {
-            kind = 'success';
-          }
-          if (item.negate) {
-            kind = 'danger';
-          }
-
-          return (
-            <Label key={index} kind={kind}>
-              {item.name}
-            </Label>
-          );
-        })}
-      </div>
+      ) : null}
 
       <EditAutoTaggingModal
         id={id}
@@ -122,6 +134,6 @@ export default function AutoTagging({
         onConfirm={onConfirmDelete}
         onCancel={onDeleteModalClose}
       />
-    </Card>
+    </SettingsCard>
   );
 }

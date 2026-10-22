@@ -1,8 +1,5 @@
-import React, { useEffect, useMemo } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import AppState from 'App/State/AppState';
+import React, { useMemo } from 'react';
 import Alert from 'Components/Alert';
-import FieldSet from 'Components/FieldSet';
 import Button from 'Components/Link/Button';
 import LoadingIndicator from 'Components/Loading/LoadingIndicator';
 import ModalBody from 'Components/Modal/ModalBody';
@@ -10,15 +7,15 @@ import ModalContent from 'Components/Modal/ModalContent';
 import ModalFooter from 'Components/Modal/ModalFooter';
 import ModalHeader from 'Components/Modal/ModalHeader';
 import { kinds } from 'Helpers/Props';
-import { fetchImportListSchema } from 'Store/Actions/settingsActions';
-import ImportList from 'typings/ImportList';
+import { SelectedSchema } from 'Settings/useProviderSchema';
 import titleCase from 'Utilities/String/titleCase';
 import translate from 'Utilities/String/translate';
 import AddImportListItem from './AddImportListItem';
-import styles from './AddImportListModalContent.css';
+import { ImportListModel, useImportListSchema } from './useImportLists';
+import styles from './AddImportListModalContent.module.css';
 
 export interface AddImportListModalContentProps {
-  onImportListSelect: () => void;
+  onImportListSelect: (selectedSchema: SelectedSchema) => void;
   onModalClose: () => void;
 }
 
@@ -26,22 +23,23 @@ function AddImportListModalContent({
   onImportListSelect,
   onModalClose,
 }: AddImportListModalContentProps) {
-  const dispatch = useDispatch();
-  const { isSchemaFetching, isSchemaPopulated, schemaError, schema } =
-    useSelector((state: AppState) => state.settings.importLists);
+  const { isSchemaLoading, isSchemaFetched, schemaError, schema } =
+    useImportListSchema();
 
   const listGroups = useMemo(() => {
-    const result = schema.reduce<Record<string, ImportList[]>>((acc, item) => {
-      if (!acc[item.listType]) {
-        acc[item.listType] = [];
-      }
+    const result = schema.reduce<Record<string, ImportListModel[]>>(
+      (acc, item) => {
+        if (!acc[item.listType]) {
+          acc[item.listType] = [];
+        }
 
-      acc[item.listType].push(item);
+        acc[item.listType].push(item);
 
-      return acc;
-    }, {});
+        return acc;
+      },
+      {}
+    );
 
-    // Sort the lists by listOrder after grouping them
     Object.keys(result).forEach((key) => {
       result[key].sort((a, b) => {
         return a.listOrder - b.listOrder;
@@ -51,50 +49,35 @@ function AddImportListModalContent({
     return result;
   }, [schema]);
 
-  useEffect(() => {
-    dispatch(fetchImportListSchema());
-  }, [dispatch]);
-
   return (
     <ModalContent onModalClose={onModalClose}>
       <ModalHeader>{translate('AddImportList')}</ModalHeader>
 
       <ModalBody>
-        {isSchemaFetching ? <LoadingIndicator /> : null}
+        {isSchemaLoading ? <LoadingIndicator /> : null}
 
-        {!isSchemaFetching && !!schemaError ? (
+        {!isSchemaLoading && !!schemaError ? (
           <Alert kind={kinds.DANGER}>{translate('AddListError')}</Alert>
         ) : null}
 
-        {isSchemaPopulated && !schemaError ? (
-          <div>
-            <Alert kind={kinds.INFO}>
-              <div>{translate('SupportedListsSeries')}</div>
-              <div>{translate('SupportedListsMoreInfo')}</div>
-            </Alert>
-            {Object.keys(listGroups).map((key) => {
-              return (
-                <FieldSet
-                  key={key}
-                  legend={translate('TypeOfList', {
-                    typeOfList: titleCase(key),
-                  })}
-                >
-                  <div className={styles.lists}>
-                    {listGroups[key].map((list) => {
-                      return (
-                        <AddImportListItem
-                          key={list.implementation}
-                          {...list}
-                          implementation={list.implementation}
-                          onImportListSelect={onImportListSelect}
-                        />
-                      );
-                    })}
-                  </div>
-                </FieldSet>
-              );
-            })}
+        {isSchemaFetched && !schemaError ? (
+          <div className={styles.lists}>
+            {Object.keys(listGroups).map((key) => (
+              <div key={key} className={styles.group}>
+                <h3 className={styles.groupHeading}>
+                  {translate('TypeOfList', { typeOfList: titleCase(key) })}
+                </h3>
+
+                {listGroups[key].map((list) => (
+                  <AddImportListItem
+                    key={list.implementation}
+                    {...list}
+                    implementation={list.implementation}
+                    onImportListSelect={onImportListSelect}
+                  />
+                ))}
+              </div>
+            ))}
           </div>
         ) : null}
       </ModalBody>

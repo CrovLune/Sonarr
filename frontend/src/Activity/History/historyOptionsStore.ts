@@ -22,11 +22,11 @@ const { useOptions, useOption, setOptions, setOption, setSort } =
           label: '',
           columnLabel: () => translate('EventType'),
           isVisible: true,
-          isModifiable: false,
+          isModifiable: 'onlyPosition',
         },
         {
           name: 'series.sortTitle',
-          label: () => translate('Series'),
+          label: () => translate('SeriesSingular'),
           isSortable: true,
           isVisible: true,
         },
@@ -48,6 +48,7 @@ const { useOptions, useOption, setOptions, setOption, setSort } =
         {
           name: 'quality',
           label: () => translate('Quality'),
+          isSortable: true,
           isVisible: true,
         },
         {
@@ -96,7 +97,7 @@ const { useOptions, useOption, setOptions, setOption, setSort } =
           label: '',
           columnLabel: () => translate('Details'),
           isVisible: true,
-          isModifiable: false,
+          isModifiable: 'onlyPosition',
         },
       ],
     };

@@ -8,7 +8,6 @@ using NzbDrone.Common.Cloud;
 using NzbDrone.Common.Disk;
 using NzbDrone.Common.Extensions;
 using NzbDrone.Common.Http;
-using NzbDrone.Core.Configuration;
 using NzbDrone.Core.DataAugmentation.DailySeries;
 using NzbDrone.Core.Exceptions;
 using NzbDrone.Core.Languages;
@@ -22,34 +21,31 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
     public class SkyHookProxy : IProvideSeriesInfo, ISearchForNewSeries
     {
         private readonly IHttpClient _httpClient;
-        private readonly IConfigService _configService;
         private readonly Logger _logger;
         private readonly ISeriesService _seriesService;
         private readonly IDailySeriesService _dailySeriesService;
         private readonly IHttpRequestBuilderFactory _requestBuilder;
-        private readonly Dictionary<int, string> _tmdbOriginalTitleCache = new();
 
         public SkyHookProxy(IHttpClient httpClient,
                             ISonarrCloudRequestBuilder requestBuilder,
                             ISeriesService seriesService,
                             IDailySeriesService dailySeriesService,
-                            IConfigService configService,
                             Logger logger)
         {
             _httpClient = httpClient;
-            _configService = configService;
-            _requestBuilder = requestBuilder.SkyHookTvdb;
             _logger = logger;
             _seriesService = seriesService;
             _dailySeriesService = dailySeriesService;
             _requestBuilder = requestBuilder.SkyHookTvdb;
         }
 
-        public Tuple<Series, List<Episode>> GetSeriesInfo(int tvdbSeriesId)
+        public Tuple<Series, List<Episode>> GetSeriesInfo(int tvdbSeriesId, Language language, string seasonType)
         {
+            var isoLanguage = IsoLanguages.Get(language) ?? IsoLanguages.Get(Language.English);
+
             var httpRequest = _requestBuilder.Create()
                                              .SetSegment("route", "shows")
-                                             .Resource(tvdbSeriesId.ToString())
+                                             .Resource($"{isoLanguage.ThreeLetterCode}/{tvdbSeriesId}/{seasonType}")
                                              .Build();
 
             httpRequest.AllowAutoRedirect = true;
@@ -69,20 +65,13 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
                 }
             }
 
+            var episodes = httpResponse.Resource.Episodes.Select(MapEpisode);
             var series = MapSeries(httpResponse.Resource);
 
-            var configuredLanguages = OriginalTitleSelection.ParseLanguages(_configService.OriginalTitleLanguages);
-            var supplementaryEpisodes = FetchEpisodesFromTmdb(httpResponse.Resource, series.OriginalLanguage, configuredLanguages);
-            var utcNow = DateTime.UtcNow;
-
-            var episodes = httpResponse.Resource.Episodes
-                                                .Select(episode => MapEpisode(episode, series.OriginalLanguage, configuredLanguages, supplementaryEpisodes, utcNow))
-                                                .ToList();
-
-            return new Tuple<Series, List<Episode>>(series, episodes);
+            return new Tuple<Series, List<Episode>>(series, episodes.ToList());
         }
 
-        public List<Series> SearchForNewSeriesByImdbId(string imdbId)
+        public List<Series> SearchForNewSeriesByImdbId(string imdbId, Language language)
         {
             imdbId = Parser.Parser.NormalizeImdbId(imdbId);
 
@@ -91,33 +80,33 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
                 return new List<Series>();
             }
 
-            var results = SearchForNewSeries($"imdb:{imdbId}");
+            var results = SearchForNewSeries($"imdb:{imdbId}", language);
 
             return results;
         }
 
-        public List<Series> SearchForNewSeriesByAniListId(int aniListId)
+        public List<Series> SearchForNewSeriesByAniListId(int aniListId, Language language)
         {
-            var results = SearchForNewSeries($"anilist:{aniListId}");
+            var results = SearchForNewSeries($"anilist:{aniListId}", language);
 
             return results;
         }
 
-        public List<Series> SearchForNewSeriesByMyAnimeListId(int malId)
+        public List<Series> SearchForNewSeriesByTmdbId(int tmdbId, Language language)
         {
-            var results = SearchForNewSeries($"mal:{malId}");
+            var results = SearchForNewSeries($"tmdb:{tmdbId}", language);
 
             return results;
         }
 
-        public List<Series> SearchForNewSeriesByTmdbId(int tmdbId)
+        public List<Series> SearchForNewSeriesByMyAnimeListId(int malId, Language language)
         {
-            var results = SearchForNewSeries($"tmdb:{tmdbId}");
+            var results = SearchForNewSeries($"mal:{malId}", language);
 
             return results;
         }
 
-        public List<Series> SearchForNewSeries(string title)
+        public List<Series> SearchForNewSeries(string title, Language language)
         {
             if (title.IsPathValid(PathValidationType.AnyOs))
             {
@@ -140,12 +129,13 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
                     try
                     {
                         var existingSeries = _seriesService.FindByTvdbId(tvdbId);
+
                         if (existingSeries != null)
                         {
                             return new List<Series> { existingSeries };
                         }
 
-                        return new List<Series> { GetSeriesInfo(tvdbId).Item1 };
+                        return new List<Series> { GetSeriesInfo(tvdbId, language, SeasonType.Official).Item1 };
                     }
                     catch (SeriesNotFoundException)
                     {
@@ -153,8 +143,10 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
                     }
                 }
 
+                var isoLanguage = IsoLanguages.Get(language) ?? IsoLanguages.Get(Language.English);
                 var httpRequest = _requestBuilder.Create()
                                                  .SetSegment("route", "search")
+                                                 .AddQueryParam("language", isoLanguage.ThreeLetterCode)
                                                  .AddQueryParam("term", title.ToLower().Trim())
                                                  .Build();
 
@@ -211,28 +203,26 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
                 series.TmdbId = show.TmdbId.Value;
             }
 
+            var originalTitle = OriginalTitleSelection.Select(show.Title, show.OriginalLanguage, show.Translations);
+            var cleanOriginalTitle = originalTitle.IsNotNullOrWhiteSpace() ? originalTitle.CleanSeriesTitle() : null;
+
+            if (cleanOriginalTitle.IsNullOrWhiteSpace())
+            {
+                cleanOriginalTitle = null;
+            }
+
             series.ImdbId = show.ImdbId;
             series.MalIds = show.MalIds;
             series.AniListIds = show.AniListIds;
+            series.Title = show.Title;
+            series.CleanTitle = show.Title.CleanSeriesTitle();
+            series.OriginalTitle = originalTitle;
+            series.CleanOriginalTitle = cleanOriginalTitle;
+            series.SortTitle = SeriesTitleNormalizer.Normalize(show.Title, show.TvdbId);
 
-            // Resolved before the titles because the title choice depends on it.
             series.OriginalLanguage = show.OriginalLanguage.IsNotNullOrWhiteSpace() ?
                 IsoLanguages.Find(show.OriginalLanguage.ToLower())?.Language ?? Language.English :
                 Language.English;
-
-            var titles = OriginalTitleSelection.Select(
-                show.Title,
-                show.OriginalTitle ?? FetchOriginalTitleFromTmdb(show),
-                series.OriginalLanguage,
-                OriginalTitleSelection.ParseLanguages(_configService.OriginalTitleLanguages));
-
-            series.Title = titles.Title;
-            series.OriginalTitle = titles.AlternateTitle;
-            series.CleanOriginalTitle = titles.AlternateTitle.IsNotNullOrWhiteSpace()
-                ? Parser.Parser.CleanSeriesTitle(titles.AlternateTitle)
-                : null;
-            series.CleanTitle = Parser.Parser.CleanSeriesTitle(titles.Title);
-            series.SortTitle = SeriesTitleNormalizer.Normalize(titles.Title, show.TvdbId);
 
             if (show.FirstAired != null)
             {
@@ -276,9 +266,12 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
             }
 
             series.Actors = show.Actors.Select(MapActors).ToList();
-            series.Seasons = show.Seasons.Select(MapSeason).ToList();
+            series.Seasons = show.Seasons.Select(MapSeason).DistinctBy(s => s.SeasonNumber).ToList();
             series.Images = show.Images.Select(MapImage).ToList();
             series.Monitored = true;
+
+            series.SeasonTypes = show.SeasonTypes.Select(MapSeasonType).ToList();
+            series.Translations = MapTranslations(show.Translations);
 
             return series;
         }
@@ -302,33 +295,15 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
             return newActor;
         }
 
-        private static Episode MapEpisode(EpisodeResource oracleEpisode,
-                                          Language originalLanguage,
-                                          IReadOnlyCollection<Language> languages,
-                                          IReadOnlyDictionary<(int Season, int Episode), TmdbEpisodeResource> supplementaryEpisodes,
-                                          DateTime utcNow)
+        private static Episode MapEpisode(EpisodeResource oracleEpisode)
         {
-            supplementaryEpisodes.TryGetValue((oracleEpisode.SeasonNumber, oracleEpisode.EpisodeNumber), out var supplementary);
-
-            var metadata = EpisodeMetadataSelection.Select(
-                oracleEpisode.Title,
-                oracleEpisode.Overview,
-                supplementary?.Name,
-                supplementary?.Overview,
-                oracleEpisode.SeasonNumber,
-                oracleEpisode.EpisodeNumber,
-                originalLanguage,
-                languages,
-                oracleEpisode.AirDateUtc,
-                utcNow);
-
             var episode = new Episode();
             episode.TvdbId = oracleEpisode.TvdbId;
-            episode.Overview = metadata.Overview;
+            episode.Overview = oracleEpisode.Overview;
             episode.SeasonNumber = oracleEpisode.SeasonNumber;
             episode.EpisodeNumber = oracleEpisode.EpisodeNumber;
             episode.AbsoluteEpisodeNumber = oracleEpisode.AbsoluteEpisodeNumber;
-            episode.Title = metadata.Title;
+            episode.Title = oracleEpisode.Title;
             episode.AiredAfterSeasonNumber = oracleEpisode.AiredAfterSeasonNumber;
             episode.AiredBeforeSeasonNumber = oracleEpisode.AiredBeforeSeasonNumber;
             episode.AiredBeforeEpisodeNumber = oracleEpisode.AiredBeforeEpisodeNumber;
@@ -354,6 +329,7 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
             return new Season
             {
                 SeasonNumber = seasonResource.SeasonNumber,
+                Title = seasonResource.Title,
                 Images = seasonResource.Images.Select(MapImage).ToList(),
                 Monitored = seasonResource.SeasonNumber > 0
             };
@@ -397,160 +373,6 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
             };
         }
 
-        /// <summary>
-        /// TheTVDB only serves English, and its English records for series in the configured
-        /// languages routinely carry no episode names or overviews at all. TMDB holds that data in
-        /// the show's own language, so it is pulled in per season to fill the gaps.
-        /// </summary>
-        private IReadOnlyDictionary<(int Season, int Episode), TmdbEpisodeResource> FetchEpisodesFromTmdb(ShowResource show, Language originalLanguage, IReadOnlyCollection<Language> languages)
-        {
-            var supplementary = new Dictionary<(int Season, int Episode), TmdbEpisodeResource>();
-
-            if (originalLanguage == null || languages == null || languages.Count == 0 || !languages.Contains(originalLanguage))
-            {
-                return supplementary;
-            }
-
-            var tmdbApiKey = _configService.TmdbApiKey;
-
-            if (tmdbApiKey.IsNullOrWhiteSpace() || !show.TmdbId.HasValue || show.TmdbId.Value <= 0)
-            {
-                _logger.Debug("FetchEpisodesFromTmdb: Skipping - ApiKey empty: {0} TmdbId: {1}", tmdbApiKey.IsNullOrWhiteSpace(), show.TmdbId);
-                return supplementary;
-            }
-
-            var isoLanguage = IsoLanguages.Get(originalLanguage);
-
-            if (isoLanguage == null)
-            {
-                _logger.Debug("FetchEpisodesFromTmdb: No ISO code for '{0}', skipping TMDB lookup", originalLanguage);
-                return supplementary;
-            }
-
-            var tmdbId = show.TmdbId.Value;
-
-            var seasonNumbers = show.Episodes.Select(episode => episode.SeasonNumber)
-                                             .Where(seasonNumber => seasonNumber > 0)
-                                             .Distinct()
-                                             .OrderBy(seasonNumber => seasonNumber)
-                                             .ToList();
-
-            foreach (var seasonNumber in seasonNumbers)
-            {
-                try
-                {
-                    var httpRequest = new HttpRequest($"https://api.themoviedb.org/3/tv/{tmdbId}/season/{seasonNumber}?language={isoLanguage.TwoLetterCode}")
-                    {
-                        AllowAutoRedirect = true,
-                        SuppressHttpError = true,
-
-                        // Seasons are fetched one after another, and AddSeriesService discards the
-                        // episodes entirely, so a stalled TMDB must not hold up adding a series for
-                        // the dispatcher's 100 second default per season.
-                        RequestTimeout = TimeSpan.FromSeconds(15)
-                    };
-
-                    httpRequest.Headers.Add("Authorization", $"Bearer {tmdbApiKey}");
-
-                    var response = _httpClient.Get<TmdbSeasonResource>(httpRequest);
-
-                    if (response.HasHttpError)
-                    {
-                        _logger.Warn("TMDB season request failed with status {0} for TmdbId {1} season {2}", response.StatusCode, tmdbId, seasonNumber);
-                        continue;
-                    }
-
-                    foreach (var episode in response.Resource?.Episodes ?? new List<TmdbEpisodeResource>())
-                    {
-                        supplementary[(seasonNumber, episode.EpisodeNumber)] = episode;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // Supplementary data only - a TMDB outage must not fail the series refresh.
-                    _logger.Warn(ex, "Failed to fetch episodes from TMDB for TmdbId {0} season {1}", tmdbId, seasonNumber);
-                }
-            }
-
-            _logger.Debug("FetchEpisodesFromTmdb: Found {0} episodes across {1} seasons for TmdbId {2}", supplementary.Count, seasonNumbers.Count, tmdbId);
-
-            return supplementary;
-        }
-
-        private string FetchOriginalTitleFromTmdb(ShowResource show)
-        {
-            var tmdbApiKey = _configService.TmdbApiKey;
-
-            _logger.Debug("FetchOriginalTitleFromTmdb: TmdbId={0} OriginalLanguage={1} HasApiKey={2}", show.TmdbId, show.OriginalLanguage, tmdbApiKey.IsNotNullOrWhiteSpace());
-
-            if (tmdbApiKey.IsNullOrWhiteSpace() || !show.TmdbId.HasValue || show.TmdbId.Value <= 0)
-            {
-                _logger.Debug("FetchOriginalTitleFromTmdb: Skipping - ApiKey empty: {0} TmdbId: {1}", tmdbApiKey.IsNullOrWhiteSpace(), show.TmdbId);
-                return null;
-            }
-
-            if (show.OriginalLanguage.IsNullOrWhiteSpace() || show.OriginalLanguage == "eng")
-            {
-                _logger.Debug("FetchOriginalTitleFromTmdb: Skipping - English or no original language");
-                return null;
-            }
-
-            var isoLanguage = IsoLanguages.Find(show.OriginalLanguage.ToLower());
-
-            if (isoLanguage == null)
-            {
-                _logger.Debug("Could not find ISO language for '{0}', skipping TMDB lookup", show.OriginalLanguage);
-                return null;
-            }
-
-            var tmdbId = show.TmdbId.Value;
-
-            if (_tmdbOriginalTitleCache.TryGetValue(tmdbId, out var cachedTitle))
-            {
-                _logger.Debug("Using cached original title '{0}' for TmdbId {1}", cachedTitle, tmdbId);
-                return cachedTitle;
-            }
-
-            try
-            {
-                var httpRequest = new HttpRequest($"https://api.themoviedb.org/3/tv/{tmdbId}")
-                {
-                    AllowAutoRedirect = true,
-                    SuppressHttpError = true
-                };
-
-                httpRequest.Headers.Add("Authorization", $"Bearer {tmdbApiKey}");
-
-                var response = _httpClient.Get<TmdbSeriesResource>(httpRequest);
-
-                if (response.HasHttpError)
-                {
-                    _logger.Warn("TMDB API request failed with status {0} for TmdbId {1}", response.StatusCode, tmdbId);
-                    return null;
-                }
-
-                var originalName = response.Resource?.OriginalName;
-
-                if (originalName.IsNotNullOrWhiteSpace() &&
-                    !string.Equals(originalName, show.Title, StringComparison.InvariantCultureIgnoreCase))
-                {
-                    _logger.Debug("Found original title '{0}' from TMDB for '{1}'", originalName, show.Title);
-                    _tmdbOriginalTitleCache[tmdbId] = originalName;
-                    return originalName;
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.Warn(ex, "Failed to fetch original title from TMDB for TmdbId {0}", tmdbId);
-            }
-
-            // No language-tagged original title available. Alternative titles carry no
-            // language information, so guessing one risks writing an unrelated show's title
-            // (and poisoning search with it).
-            _tmdbOriginalTitleCache[tmdbId] = null;
-            return null;
-        }
-
         private static MediaCoverTypes MapCoverType(string coverType)
         {
             switch (coverType.ToLower())
@@ -566,6 +388,40 @@ namespace NzbDrone.Core.MetadataSource.SkyHook
                 default:
                     return MediaCoverTypes.Unknown;
             }
+        }
+
+        private static SeasonType MapSeasonType(SeasonTypeResource seasonType)
+        {
+            return new SeasonType
+            {
+                Name = seasonType.Name,
+                Type = seasonType.Type,
+                SeasonNumbers = seasonType.SeasonNumbers,
+                EpisodeCount = seasonType.EpisodeCount
+            };
+        }
+
+        private static List<SeriesTranslation> MapTranslations(List<TranslationResource> translations)
+        {
+            var result = new List<SeriesTranslation>();
+
+            translations.ForEach(t =>
+            {
+                var language = IsoLanguages.Find(t.Language);
+
+                if (language != null && t.Title.IsNotNullOrWhiteSpace())
+                {
+                    result.Add(new SeriesTranslation
+                    {
+                        Language = language.Language,
+                        Title = t.Title,
+                        CleanTitle = t.Title.CleanSeriesTitle(),
+                        Overview = t.Overview
+                    });
+                }
+            });
+
+            return result;
         }
     }
 }

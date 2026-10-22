@@ -1,8 +1,11 @@
 import { useQueryClient } from '@tanstack/react-query';
 import AddSeries from 'AddSeries/AddSeries';
 import { AddSeriesOptions } from 'AddSeries/addSeriesOptionsStore';
-import useApiMutation from 'Helpers/Hooks/useApiMutation';
+import useApiMutation, {
+  addOrUpdateQueryClientItem,
+} from 'Helpers/Hooks/useApiMutation';
 import useApiQuery from 'Helpers/Hooks/useApiQuery';
+import Language from 'Language/Language';
 import Series from 'Series/Series';
 
 interface AddSeriesPayload
@@ -10,15 +13,22 @@ interface AddSeriesPayload
     Omit<
       AddSeriesOptions,
       'monitor' | 'searchForMissingEpisodes' | 'searchForCutoffUnmetEpisodes'
-    > {}
+    > {
+  language: Language;
+}
 
 const DEFAULT_SERIES: AddSeries[] = [];
 
-export const useLookupSeries = (query: string, isEnabled = true) => {
+export const useLookupSeries = (
+  query: string,
+  language: Language,
+  isEnabled = true
+) => {
   const result = useApiQuery<AddSeries[]>({
     path: '/series/lookup',
     queryParams: {
       term: query,
+      language: language.id,
     },
     queryOptions: {
       enabled: isEnabled && !!query,
@@ -42,13 +52,9 @@ export const useAddSeries = () => {
       method: 'POST',
       mutationOptions: {
         onSuccess: (newSeries) => {
-          queryClient.setQueryData<Series[]>(['/series'], (oldSeries) => {
-            if (!oldSeries) {
-              return [newSeries];
-            }
-
-            return [...oldSeries, newSeries];
-          });
+          queryClient.setQueryData<Series[]>(['/series'], (oldSeries = []) =>
+            addOrUpdateQueryClientItem(oldSeries, newSeries, 'id')
+          );
         },
       },
     }

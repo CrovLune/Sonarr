@@ -28,15 +28,29 @@ namespace Sonarr.Http.Frontend.Mappers
             _caseSensitive = RuntimeInfo.IsProduction ? DiskProviderBase.PathStringComparison : StringComparison.OrdinalIgnoreCase;
         }
 
-        public abstract string Map(string resourceUrl);
+        protected abstract string FolderPath { get; }
+        protected abstract string MapPath(string resourceUrl);
 
         public abstract bool CanHandle(string resourceUrl);
+
+        public string Map(string resourceUrl)
+        {
+            var filePath = Path.GetFullPath(MapPath(resourceUrl));
+            var parentPath = Path.GetFullPath(FolderPath) + Path.DirectorySeparatorChar;
+
+            return filePath.StartsWith(parentPath) ? filePath : null;
+        }
 
         public Task<IActionResult> GetResponse(HttpContext context, string resourceUrl)
         {
             var filePath = Map(resourceUrl);
 
-            if (_diskProvider.FileExists(filePath, _caseSensitive))
+            if (filePath == null)
+            {
+                return Task.FromResult<IActionResult>(null);
+            }
+
+            if (FileExists(filePath))
             {
                 if (!_mimeTypeProvider.TryGetContentType(filePath, out var contentType))
                 {
@@ -52,6 +66,11 @@ namespace Sonarr.Http.Frontend.Mappers
             _logger.Warn("File {0} not found", filePath);
 
             return Task.FromResult<IActionResult>(null);
+        }
+
+        protected virtual bool FileExists(string filePath)
+        {
+            return _diskProvider.FileExists(filePath, _caseSensitive);
         }
 
         protected virtual Stream GetContentStream(HttpContext context, string filePath)

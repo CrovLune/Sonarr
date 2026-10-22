@@ -14,7 +14,7 @@ import {
   ImportListExclusion,
   useDeleteImportListExclusion,
 } from './useImportListExclusions';
-import styles from './ImportListExclusionRow.css';
+import styles from './ImportListExclusionRow.module.css';
 
 interface ImportListExclusionRowProps extends ImportListExclusion {
   onModalClose: () => void;
@@ -77,6 +77,7 @@ function ImportListExclusionRow({
       <TableRowCell className={styles.actions}>
         <IconButton
           name={icons.EDIT}
+          aria-label={translate('Edit')}
           onPress={setEditImportListExclusionModalOpen}
         />
       </TableRowCell>

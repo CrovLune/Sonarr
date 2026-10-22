@@ -1,10 +1,12 @@
 import React from 'react';
 import Modal from 'Components/Modal/Modal';
+import { sizes } from 'Helpers/Props';
+import { AutoTaggingSpecification } from '../useAutoTaggings';
 import AddSpecificationModalContent from './AddSpecificationModalContent';
 
 interface AddSpecificationModalProps {
   isOpen: boolean;
-  onModalClose: (options?: { specificationSelected: boolean }) => void;
+  onModalClose: (selectedSpec?: AutoTaggingSpecification) => void;
 }
 
 function AddSpecificationModal({
@@ -12,7 +14,7 @@ function AddSpecificationModal({
   onModalClose,
 }: AddSpecificationModalProps) {
   return (
-    <Modal isOpen={isOpen} onModalClose={onModalClose}>
+    <Modal isOpen={isOpen} size={sizes.MEDIUM} onModalClose={onModalClose}>
       <AddSpecificationModalContent onModalClose={onModalClose} />
     </Modal>
   );

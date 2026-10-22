@@ -1,3 +1,6 @@
+using System.Diagnostics.CodeAnalysis;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using NzbDrone.Common.Extensions;
 using NzbDrone.Core.Blocklisting;
@@ -10,7 +13,6 @@ using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Languages;
 using NzbDrone.Core.Messaging.Events;
 using NzbDrone.Core.Profiles.Qualities;
-using NzbDrone.Core.Qualities;
 using NzbDrone.Core.Queue;
 using NzbDrone.SignalR;
 using Sonarr.Http;
@@ -26,8 +28,7 @@ namespace Sonarr.Api.V5.Queue
     {
         private readonly IQueueService _queueService;
         private readonly IPendingReleaseService _pendingReleaseService;
-
-        private readonly QualityModelComparer _qualityComparer;
+        private readonly IQualityProfileRankService _rankService;
         private readonly ITrackedDownloadService _trackedDownloadService;
         private readonly IFailedDownloadService _failedDownloadService;
         private readonly IIgnoredDownloadService _ignoredDownloadService;
@@ -37,7 +38,7 @@ namespace Sonarr.Api.V5.Queue
         public QueueController(IBroadcastSignalRMessage broadcastSignalRMessage,
                            IQueueService queueService,
                            IPendingReleaseService pendingReleaseService,
-                           IQualityProfileService qualityProfileService,
+                           IQualityProfileRankService rankService,
                            ITrackedDownloadService trackedDownloadService,
                            IFailedDownloadService failedDownloadService,
                            IIgnoredDownloadService ignoredDownloadService,
@@ -47,17 +48,16 @@ namespace Sonarr.Api.V5.Queue
         {
             _queueService = queueService;
             _pendingReleaseService = pendingReleaseService;
+            _rankService = rankService;
             _trackedDownloadService = trackedDownloadService;
             _failedDownloadService = failedDownloadService;
             _ignoredDownloadService = ignoredDownloadService;
             _downloadClientProvider = downloadClientProvider;
             _blocklistService = blocklistService;
-
-            _qualityComparer = new QualityModelComparer(qualityProfileService.GetDefaultProfile(string.Empty));
         }
 
         [NonAction]
-        public override ActionResult<QueueResource> GetResourceByIdWithErrorHandler(int id)
+        public override Results<Ok<QueueResource>, NotFound> GetResourceByIdWithErrorHandler(int id)
         {
             return base.GetResourceByIdWithErrorHandler(id);
         }
@@ -68,15 +68,17 @@ namespace Sonarr.Api.V5.Queue
         }
 
         [RestDeleteById]
-        public ActionResult RemoveAction(int id, string? message = null, bool removeFromClient = true, bool blocklist = false, bool skipRedownload = false, bool changeCategory = false)
+        public Results<NoContent, NotFound> RemoveAction(int id, [FromQuery] QueueRemovalMethod? removalMethod, [FromQuery] QueueBlocklistMethod? blocklistMethod, [FromQuery] string? message = null)
         {
+            ValidateRemovalOptions(removalMethod, blocklistMethod);
+
             var pendingRelease = _pendingReleaseService.FindPendingQueueItem(id);
 
             if (pendingRelease != null)
             {
-                Remove(pendingRelease, message, blocklist);
+                Remove(pendingRelease, message, blocklistMethod.Value);
 
-                return NoContent();
+                return TypedResults.NoContent();
             }
 
             var trackedDownload = GetTrackedDownload(id);
@@ -86,15 +88,18 @@ namespace Sonarr.Api.V5.Queue
                 throw new NotFoundException();
             }
 
-            Remove(trackedDownload, message, removeFromClient, blocklist, skipRedownload, changeCategory);
+            Remove(trackedDownload, message, removalMethod.Value, blocklistMethod.Value);
             _trackedDownloadService.StopTracking(trackedDownload.DownloadItem.DownloadId);
 
-            return NoContent();
+            return TypedResults.NoContent();
         }
 
         [HttpDelete("bulk")]
-        public object RemoveMany([FromBody] QueueBulkResource resource, [FromQuery] string? message, [FromQuery] bool removeFromClient = true, [FromQuery] bool blocklist = false, [FromQuery] bool skipRedownload = false, [FromQuery] bool changeCategory = false)
+        [Consumes("application/json")]
+        public NoContent RemoveMany([FromBody] QueueBulkResource resource, [FromQuery] QueueRemovalMethod? removalMethod, [FromQuery] QueueBlocklistMethod? blocklistMethod, [FromQuery] string? message = null)
         {
+            ValidateRemovalOptions(removalMethod, blocklistMethod);
+
             var trackedDownloadIds = new List<string>();
             var pendingToRemove = new List<NzbDrone.Core.Queue.Queue>();
             var trackedToRemove = new List<TrackedDownload>();
@@ -119,23 +124,23 @@ namespace Sonarr.Api.V5.Queue
 
             foreach (var pendingRelease in pendingToRemove.DistinctBy(p => p.Id))
             {
-                Remove(pendingRelease, message, blocklist);
+                Remove(pendingRelease, message, blocklistMethod.Value);
             }
 
             foreach (var trackedDownload in trackedToRemove.DistinctBy(t => t.DownloadItem.DownloadId))
             {
-                Remove(trackedDownload, message, removeFromClient, blocklist, skipRedownload, changeCategory);
+                Remove(trackedDownload, message, removalMethod.Value, blocklistMethod.Value);
                 trackedDownloadIds.Add(trackedDownload.DownloadItem.DownloadId);
             }
 
             _trackedDownloadService.StopTracking(trackedDownloadIds);
 
-            return NoContent();
+            return TypedResults.NoContent();
         }
 
         [HttpGet]
         [Produces("application/json")]
-        public PagingResource<QueueResource> GetQueue([FromQuery] PagingRequestResource paging, bool includeUnknownSeriesItems = true, [FromQuery] int[]? seriesIds = null, DownloadProtocol? protocol = null, [FromQuery] int[]? languages = null, [FromQuery] int[]? quality = null, [FromQuery] QueueStatus[]? status = null, [FromQuery] QueueSubresource[]? includeSubresources = null)
+        public Ok<PagingResource<QueueResource>> GetQueue([FromQuery] PagingRequestResource paging, bool includeUnknownSeriesItems = true, [FromQuery] int[]? seriesIds = null, DownloadProtocol? protocol = null, [FromQuery] int[]? languages = null, [FromQuery] int[]? quality = null, [FromQuery] QueueStatus[]? status = null, [FromQuery] QueueSubresource[]? includeSubresources = null)
         {
             var pagingResource = new PagingResource<QueueResource>(paging);
             var pagingSpec = pagingResource.MapToPagingSpec<QueueResource, NzbDrone.Core.Queue.Queue>(
@@ -167,7 +172,7 @@ namespace Sonarr.Api.V5.Queue
             var includeSeries = includeSubresources.Contains(QueueSubresource.Series);
             var includeEpisodes = includeSubresources.Contains(QueueSubresource.Episodes);
 
-            return pagingSpec.ApplyToPage((spec) => GetQueue(spec, seriesIds?.ToHashSet() ?? [], protocol, languages?.ToHashSet() ?? [], quality?.ToHashSet() ?? [], status?.ToHashSet() ?? [], includeUnknownSeriesItems), (q) => MapToResource(q, includeSeries, includeEpisodes));
+            return TypedResults.Ok(pagingSpec.ApplyToPage((spec) => GetQueue(spec, seriesIds?.ToHashSet() ?? [], protocol, languages?.ToHashSet() ?? [], quality?.ToHashSet() ?? [], status?.ToHashSet() ?? [], includeUnknownSeriesItems), (q) => MapToResource(q, includeSeries, includeEpisodes)));
         }
 
         private PagingSpec<NzbDrone.Core.Queue.Queue> GetQueue(PagingSpec<NzbDrone.Core.Queue.Queue> pagingSpec, HashSet<int> seriesIds, DownloadProtocol? protocol, HashSet<int> languages, HashSet<int> quality, HashSet<QueueStatus> status, bool includeUnknownSeriesItems)
@@ -256,9 +261,12 @@ namespace Sonarr.Api.V5.Queue
             }
             else if (pagingSpec.SortKey == "quality")
             {
+                double rankOf(NzbDrone.Core.Queue.Queue q) =>
+                    _rankService.GetRank(q.Series?.QualityProfileId, q.Quality?.Quality?.Id);
+
                 ordered = ascending
-                    ? fullQueue.OrderBy(q => q.Quality, _qualityComparer)
-                    : fullQueue.OrderByDescending(q => q.Quality, _qualityComparer);
+                    ? fullQueue.OrderBy(rankOf)
+                    : fullQueue.OrderByDescending(rankOf);
             }
             else if (pagingSpec.SortKey == "languages")
             {
@@ -317,9 +325,22 @@ namespace Sonarr.Api.V5.Queue
             }
         }
 
-        private void Remove(NzbDrone.Core.Queue.Queue pendingRelease, string? message, bool blocklist)
+        private static void ValidateRemovalOptions([NotNull] QueueRemovalMethod? removalMethod, [NotNull] QueueBlocklistMethod? blocklistMethod)
         {
-            if (blocklist)
+            if (!removalMethod.HasValue)
+            {
+                throw new BadRequestException("removalMethod must be provided");
+            }
+
+            if (!blocklistMethod.HasValue)
+            {
+                throw new BadRequestException("blocklistMethod must be provided");
+            }
+        }
+
+        private void Remove(NzbDrone.Core.Queue.Queue pendingRelease, string? message, QueueBlocklistMethod blocklistMethod)
+        {
+            if (blocklistMethod != QueueBlocklistMethod.DoNotBlocklist)
             {
                 _blocklistService.Block(pendingRelease.RemoteEpisode, message ?? "Pending release manually blocklisted", Request.GetSource());
             }
@@ -327,9 +348,11 @@ namespace Sonarr.Api.V5.Queue
             _pendingReleaseService.RemovePendingQueueItems(pendingRelease.Id);
         }
 
-        private TrackedDownload? Remove(TrackedDownload trackedDownload, string? message, bool removeFromClient, bool blocklist, bool skipRedownload, bool changeCategory)
+        private TrackedDownload? Remove(TrackedDownload trackedDownload, string? message, QueueRemovalMethod removalMethod, QueueBlocklistMethod blocklistMethod)
         {
-            if (removeFromClient)
+            var blocklist = blocklistMethod != QueueBlocklistMethod.DoNotBlocklist;
+
+            if (removalMethod == QueueRemovalMethod.RemoveFromClient)
             {
                 var downloadClient = _downloadClientProvider.Get(trackedDownload.DownloadClient);
 
@@ -340,7 +363,7 @@ namespace Sonarr.Api.V5.Queue
 
                 downloadClient.RemoveItem(trackedDownload.DownloadItem, true);
             }
-            else if (changeCategory)
+            else if (removalMethod == QueueRemovalMethod.ChangeCategory)
             {
                 var downloadClient = _downloadClientProvider.Get(trackedDownload.DownloadClient);
 
@@ -349,15 +372,20 @@ namespace Sonarr.Api.V5.Queue
                     throw new BadRequestException();
                 }
 
+                if (!trackedDownload.DownloadItem.DownloadClientInfo.HasPostImportCategory)
+                {
+                    throw new BadRequestException($"Queue item with ID {trackedDownload.DownloadItem.DownloadId} does not support category changing.");
+                }
+
                 downloadClient.MarkItemAsImported(trackedDownload.DownloadItem);
             }
 
             if (blocklist)
             {
-                _failedDownloadService.MarkAsFailed(trackedDownload, message, Request.GetSource(), skipRedownload);
+                _failedDownloadService.MarkAsFailed(trackedDownload, message, Request.GetSource(), blocklistMethod == QueueBlocklistMethod.BlocklistOnly);
             }
 
-            if (!removeFromClient && !blocklist && !changeCategory)
+            if (removalMethod == QueueRemovalMethod.Ignore && !blocklist)
             {
                 if (!_ignoredDownloadService.IgnoreDownload(trackedDownload))
                 {
@@ -374,14 +402,14 @@ namespace Sonarr.Api.V5.Queue
 
             if (queueItem == null)
             {
-                throw new NotFoundException();
+                throw new NotFoundException($"Queue item with ID {queueId} does not exist.");
             }
 
             var trackedDownload = _trackedDownloadService.Find(queueItem.DownloadId);
 
             if (trackedDownload == null)
             {
-                throw new NotFoundException();
+                throw new NotFoundException($"Tracked download with ID {queueItem.DownloadId} does not exist.");
             }
 
             return trackedDownload;

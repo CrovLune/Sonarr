@@ -44,7 +44,7 @@ namespace NzbDrone.Common.Http.Dispatchers
             _httpHappyEyeballs = new HttpHappyEyeballs(logger);
         }
 
-        public async Task<HttpResponse> GetResponseAsync(HttpRequest request, CookieContainer cookies)
+        public async Task<HttpResponse> GetResponseAsync(HttpRequest request, CookieContainer cookies, CancellationToken cancellationToken = default)
         {
             using var requestMessage = new HttpRequestMessage(request.Method, (Uri)request.Url);
             requestMessage.Version = HttpVersion.Version20;
@@ -58,7 +58,8 @@ namespace NzbDrone.Common.Http.Dispatchers
                 requestMessage.Headers.Add("Cookie", cookieHeader);
             }
 
-            using var cts = new CancellationTokenSource();
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
             if (request.RequestTimeout != TimeSpan.Zero)
             {
                 cts.CancelAfter(request.RequestTimeout);
@@ -75,7 +76,7 @@ namespace NzbDrone.Common.Http.Dispatchers
                 {
                     // Manually set header to avoid initial challenge response
                     var authInfo = bc.UserName + ":" + bc.Password;
-                    authInfo = Convert.ToBase64String(Encoding.GetEncoding("ISO-8859-1").GetBytes(authInfo));
+                    authInfo = Convert.ToBase64String(Encoding.UTF8.GetBytes(authInfo));
                     requestMessage.Headers.Add("Authorization", "Basic " + authInfo);
                 }
                 else if (request.Credentials is NetworkCredential nc)
@@ -154,6 +155,7 @@ namespace NzbDrone.Common.Http.Dispatchers
                 Credentials = GetCredentialCache(),
                 PreAuthenticate = true,
                 MaxConnectionsPerServer = 12,
+                PooledConnectionLifetime = TimeSpan.FromMinutes(30),
                 ConnectCallback = Socket.OSSupportsIPv6 ? _httpHappyEyeballs.OnConnect : null,
                 SslOptions = new SslClientAuthenticationOptions
                 {

@@ -4,11 +4,11 @@ import { Kind } from 'Helpers/Props/kinds';
 import { Tag } from 'Tags/useTags';
 import sortByProp from 'Utilities/Array/sortByProp';
 import Label, { LabelProps } from './Label';
-import styles from './TagList.css';
+import styles from './TagList.module.css';
 
 interface TagListProps {
   tags: number[];
-  tagList: Tag[];
+  tagList: ReadonlyArray<Tag>;
   kind?: Extract<Kind, LabelProps['kind']>;
 }
 

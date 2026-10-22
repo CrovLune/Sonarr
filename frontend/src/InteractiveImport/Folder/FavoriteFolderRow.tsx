@@ -5,7 +5,7 @@ import TableRowButton from 'Components/Table/TableRowButton';
 import { icons } from 'Helpers/Props';
 import { removeFavoriteFolder } from 'InteractiveImport/interactiveImportFoldersStore';
 import translate from 'Utilities/String/translate';
-import styles from './FavoriteFolderRow.css';
+import styles from './FavoriteFolderRow.module.css';
 
 interface FavoriteFolderRowProps {
   folder: string;
@@ -33,6 +33,7 @@ function FavoriteFolderRow({ folder, onPress }: FavoriteFolderRowProps) {
       <TableRowCell className={styles.actions}>
         <IconButton
           title={translate('FavoriteFolderRemove')}
+          aria-label={translate('FavoriteFolderRemove')}
           kind="danger"
           name={icons.HEART}
           onPress={handleRemoveFavoritePress}

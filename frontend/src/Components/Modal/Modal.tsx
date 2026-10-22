@@ -10,13 +10,13 @@ import React, {
 import ReactDOM from 'react-dom';
 import FocusLock from 'react-focus-lock';
 import ErrorBoundary from 'Components/Error/ErrorBoundary';
-import usePrevious from 'Helpers/Hooks/usePrevious';
 import { Size } from 'Helpers/Props/sizes';
 import { isIOS } from 'Utilities/browser';
 import * as keyCodes from 'Utilities/Constants/keyCodes';
 import { setScrollLock } from 'Utilities/scrollLock';
+import { ModalContext } from './ModalContext';
 import ModalError from './ModalError';
-import styles from './Modal.css';
+import styles from './Modal.module.css';
 
 const openModals: string[] = [];
 const node = document.getElementById('portal-root');
@@ -70,8 +70,6 @@ function Modal({
 }: ModalProps) {
   const backgroundRef = useRef<HTMLDivElement>(null);
   const isBackdropPressed = useRef(false);
-  const bodyScrollTop = useRef(0);
-  const wasOpen = usePrevious(isOpen);
   const modalId = useId();
 
   const isTargetBackdrop = useCallback((event: TouchEvent | MouseEvent) => {
@@ -121,33 +119,32 @@ function Modal({
   );
 
   useEffect(() => {
-    if (isOpen && !wasOpen) {
-      openModals.push(modalId);
+    if (!isOpen) {
+      return;
+    }
 
-      if (openModals.length === 1) {
-        if (isIOS()) {
-          setScrollLock(true);
-          bodyScrollTop.current = document.body.scrollTop;
-          elementClass(document.body).add(styles.modalOpenIOS);
-        } else {
-          elementClass(document.body).add(styles.modalOpen);
-        }
+    openModals.push(modalId);
+
+    if (openModals.length === 1) {
+      if (isIOS()) {
+        setScrollLock(true);
+      } else {
+        elementClass(document.body).add(styles.modalOpen);
       }
-    } else if (!isOpen && wasOpen) {
+    }
+
+    return () => {
       removeFromOpenModals(modalId);
 
       if (openModals.length === 0) {
-        setScrollLock(false);
-
         if (isIOS()) {
-          elementClass(document.body).remove(styles.modalOpenIOS);
-          document.body.scrollTop = bodyScrollTop.current;
+          setScrollLock(false);
         } else {
           elementClass(document.body).remove(styles.modalOpen);
         }
       }
-    }
-  }, [isOpen, wasOpen, modalId, handleKeyDown]);
+    };
+  }, [isOpen, modalId]);
 
   useEffect(() => {
     if (isOpen) {
@@ -163,26 +160,36 @@ function Modal({
     return null;
   }
 
+  const headerId = `${modalId}-header`;
+
   return ReactDOM.createPortal(
-    <FocusLock disabled={false}>
-      <div className={styles.modalContainer}>
-        <div
-          ref={backgroundRef}
-          className={backdropClassName}
-          onMouseDown={handleBackdropBeginPress}
-          onMouseUp={handleBackdropEndPress}
-        >
-          <div className={classNames(className, styles[size])} style={style}>
-            <ErrorBoundary
-              errorComponent={ModalError}
-              onModalClose={onModalClose}
+    <ModalContext.Provider value={{ headerId }}>
+      <FocusLock disabled={false}>
+        <div className={styles.modalContainer}>
+          <div
+            ref={backgroundRef}
+            className={backdropClassName}
+            onMouseDown={handleBackdropBeginPress}
+            onMouseUp={handleBackdropEndPress}
+          >
+            <div
+              className={classNames(className, styles[size])}
+              style={style}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={headerId}
             >
-              {children}
-            </ErrorBoundary>
+              <ErrorBoundary
+                errorComponent={ModalError}
+                onModalClose={onModalClose}
+              >
+                {children}
+              </ErrorBoundary>
+            </div>
           </div>
         </div>
-      </div>
-    </FocusLock>,
+      </FocusLock>
+    </ModalContext.Provider>,
     node!
   );
 }

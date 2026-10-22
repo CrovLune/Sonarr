@@ -49,6 +49,8 @@ namespace NzbDrone.Core.SeriesStats
 
                 e.SizeOnDisk = file?.SizeOnDisk ?? 0;
                 e.ReleaseGroupsString = file?.ReleaseGroupsString;
+                e.ReleaseTypesString = file?.ReleaseTypesString;
+                e.EpisodeFileQualitiesString = file?.EpisodeFileQualitiesString;
             });
 
             return episodesResult;
@@ -96,7 +98,9 @@ namespace NzbDrone.Core.SeriesStats
                 .Select(@"""SeriesId"",
                             ""SeasonNumber"",
                             SUM(COALESCE(""Size"", 0)) AS SizeOnDisk,
-                            GROUP_CONCAT(""ReleaseGroup"", '|') AS ReleaseGroupsString")
+                            GROUP_CONCAT(""ReleaseGroup"", '|') AS ReleaseGroupsString,
+                            GROUP_CONCAT(""ReleaseType"", '|') AS ReleaseTypesString,
+                            GROUP_CONCAT(JSON_EXTRACT(""Quality"", '$.quality'), '|') AS EpisodeFileQualitiesString")
                 .GroupBy<EpisodeFile>(x => x.SeriesId)
                 .GroupBy<EpisodeFile>(x => x.SeasonNumber);
             }
@@ -105,7 +109,9 @@ namespace NzbDrone.Core.SeriesStats
                 .Select(@"""SeriesId"",
                             ""SeasonNumber"",
                             SUM(COALESCE(""Size"", 0)) AS SizeOnDisk,
-                            string_agg(""ReleaseGroup"", '|') AS ReleaseGroupsString")
+                            string_agg(DISTINCT ""ReleaseGroup"", '|') AS ReleaseGroupsString,
+                            string_agg(DISTINCT ""ReleaseType""::text, '|') AS ReleaseTypesString,
+                            string_agg(DISTINCT ""Quality""::json->>'quality', '|') AS EpisodeFileQualitiesString")
                 .GroupBy<EpisodeFile>(x => x.SeriesId)
                 .GroupBy<EpisodeFile>(x => x.SeasonNumber);
         }

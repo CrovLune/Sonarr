@@ -1,6 +1,8 @@
+import { CollisionPriority } from '@dnd-kit/abstract';
+import { useDragOperation } from '@dnd-kit/react';
+import { useSortable } from '@dnd-kit/react/sortable';
 import classNames from 'classnames';
 import React, { useCallback } from 'react';
-import { ConnectDragSource } from 'react-dnd';
 import CheckInput from 'Components/Form/CheckInput';
 import TextInput from 'Components/Form/TextInput';
 import Icon from 'Components/Icon';
@@ -9,52 +11,60 @@ import IconButton from 'Components/Link/IconButton';
 import { icons } from 'Helpers/Props';
 import { InputChanged } from 'typings/inputs';
 import translate from 'Utilities/String/translate';
-import QualityProfileItemDragSource, {
-  DragMoveState,
-} from './QualityProfileItemDragSource';
+import QualityProfileItem from './QualityProfileItem';
+import { ItemFailures } from './qualityProfileItemFailures';
 import { SizeChanged } from './QualityProfileItemSize';
+import {
+  groupContainerKey,
+  ROOT_CONTAINER,
+  rootCollisionDetector,
+} from './useQualityProfileDnd';
 import { QualityProfileQualityItem } from './useQualityProfiles';
-import styles from './QualityProfileItemGroup.css';
+import styles from './QualityProfileItemGroup.module.css';
 
 interface QualityProfileItemGroupProps {
-  dragRef: ConnectDragSource;
   mode?: string;
+  index: number;
   groupId: number;
   name: string;
   allowed: boolean;
   items: QualityProfileQualityItem[];
-  qualityIndex: string;
-  isDragging: boolean;
-  isDraggingUp: boolean;
-  isDraggingDown: boolean;
+  failuresByQualityId: Map<number, ItemFailures>;
   onGroupAllowedChange: (groupId: number, allowed: boolean) => void;
   onItemAllowedChange: (groupId: number, allowed: boolean) => void;
   onItemGroupNameChange: (groupId: number, name: string) => void;
   onDeleteGroupPress: (groupId: number) => void;
-  onDragMove: (drag: DragMoveState) => void;
-  onDragEnd: (didDrop: boolean) => void;
   onSizeChange: (sizeChange: SizeChanged) => void;
 }
 
 function QualityProfileItemGroup({
-  dragRef,
   mode = 'default',
+  index,
   groupId,
   name,
   allowed,
   items,
-  qualityIndex,
-  isDragging,
-  isDraggingUp,
-  isDraggingDown,
+  failuresByQualityId,
   onDeleteGroupPress,
   onGroupAllowedChange,
   onItemAllowedChange,
   onItemGroupNameChange,
-  onDragMove,
-  onDragEnd,
   onSizeChange,
 }: QualityProfileItemGroupProps) {
+  const { ref, handleRef, isDragging } = useSortable({
+    id: groupContainerKey(groupId),
+    index,
+    group: ROOT_CONTAINER,
+    type: 'group',
+    accept: ['quality', 'group'],
+    collisionDetector: rootCollisionDetector,
+    collisionPriority:
+      mode === 'editGroups' ? CollisionPriority.Low : CollisionPriority.Normal,
+    disabled: mode === 'editSizes',
+  });
+
+  const { source } = useDragOperation();
+
   const handleAllowedChange = useCallback(
     ({ value }: InputChanged<boolean>) => {
       onGroupAllowedChange?.(groupId, value);
@@ -75,9 +85,9 @@ function QualityProfileItemGroup({
 
   return (
     <div
+      ref={ref}
       className={classNames(
         styles.qualityProfileItemGroup,
-        mode === 'editGroups' && styles.editGroups,
         mode === 'editSizes' && styles.editSizes,
         isDragging && styles.isDragging
       )}
@@ -89,6 +99,7 @@ function QualityProfileItemGroup({
               className={styles.deleteGroupButton}
               name={icons.UNGROUP}
               title={translate('Ungroup')}
+              aria-label={translate('Ungroup')}
               onPress={handleDeleteGroupPress}
             />
 
@@ -122,11 +133,13 @@ function QualityProfileItemGroup({
               </div>
 
               <div className={styles.groupQualities}>
-                {items
-                  .map(({ quality }) => {
-                    return <Label key={quality.id}>{quality.name}</Label>;
-                  })
-                  .reverse()}
+                {items.map(({ quality }) => {
+                  return (
+                    <Label key={quality.id} outline={true}>
+                      {quality.name}
+                    </Label>
+                  );
+                })}
               </div>
             </div>
           </label>
@@ -148,7 +161,7 @@ function QualityProfileItemGroup({
         ) : null}
 
         {mode === 'editSizes' ? null : (
-          <div ref={dragRef} className={styles.dragHandle}>
+          <div ref={handleRef} className={styles.dragHandle}>
             <Icon
               className={styles.dragIcon}
               name={icons.REORDER}
@@ -159,32 +172,36 @@ function QualityProfileItemGroup({
       </div>
 
       {mode === 'default' ? null : (
-        <div className={mode === 'editGroups' ? styles.items : undefined}>
-          {items
-            .map(({ quality }, index) => {
-              return (
-                <QualityProfileItemDragSource
-                  key={quality.id}
-                  mode={mode}
-                  groupId={groupId}
-                  qualityId={quality.id}
-                  name={quality.name}
-                  allowed={allowed}
-                  minSize={quality.minSize}
-                  maxSize={quality.maxSize}
-                  preferredSize={quality.preferredSize}
-                  qualityIndex={`${qualityIndex}.${index + 1}`}
-                  isDraggingUp={isDraggingUp}
-                  isDraggingDown={isDraggingDown}
-                  isInGroup={true}
-                  onItemAllowedChange={onItemAllowedChange}
-                  onDragMove={onDragMove}
-                  onDragEnd={onDragEnd}
-                  onSizeChange={onSizeChange}
-                />
-              );
-            })
-            .reverse()}
+        <div
+          className={classNames(
+            mode === 'editGroups' && styles.items,
+            mode === 'editGroups' &&
+              source?.type === 'quality' &&
+              styles.isDragActive
+          )}
+        >
+          {items.map((subItem, subIndex) => {
+            const { quality, minSize, maxSize, preferredSize } = subItem;
+
+            return (
+              <QualityProfileItem
+                key={quality.id}
+                mode={mode}
+                containerId={groupContainerKey(groupId)}
+                index={subIndex}
+                groupId={groupId}
+                qualityId={quality.id}
+                name={quality.name}
+                allowed={allowed}
+                minSize={minSize}
+                maxSize={maxSize}
+                preferredSize={preferredSize}
+                failures={failuresByQualityId.get(quality.id)}
+                onItemAllowedChange={onItemAllowedChange}
+                onSizeChange={onSizeChange}
+              />
+            );
+          })}
         </div>
       )}
     </div>

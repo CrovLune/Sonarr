@@ -3,12 +3,14 @@ name: Build
 on:
   push:
     branches:
+      - develop
+      # Fork: work lands on v5-develop
       - v5-develop
-      - v5-main
     paths-ignore:
       - "src/Sonarr.Api.*/openapi.json"
   pull_request:
     branches:
+      - develop
       - v5-develop
     paths-ignore:
       - "src/NzbDrone.Core/Localization/Core/**"
@@ -100,19 +102,23 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Volta
-        uses: volta-cli/action@v4
+        uses: volta-cli/action@v5
 
       - name: Yarn Install
-        run: yarn install
+        run: yarn install --frozen-lockfile
 
-      - name: Lint
-        run: yarn lint
+      - parallel:
+        - name: Lint
+          run: yarn lint
 
-      - name: Stylelint
-        run: yarn stylelint -f github
+        - name: Stylelint
+          run: yarn stylelint -f github
 
-      - name: Build
-        run: yarn build --env production
+        - name: Build
+          run: yarn build
+
+      - name: Typecheck
+        run: yarn typecheck
 
       - name: Publish UI Artifact
         uses: actions/upload-artifact@v7
@@ -209,7 +215,7 @@ jobs:
           binary_path: ${{ matrix.binary_path }}
 
   deploy:
-    if: ${{ github.ref_name == 'v5-develop-final' || github.ref_name == 'v5-main-final' }}
+    if: ${{ github.repository == 'Sonarr/Sonarr' && github.ref_name == 'develop' }}
     needs:
       [
         prepare,
@@ -221,6 +227,8 @@ jobs:
       ]
     secrets: inherit
     uses: ./.github/workflows/deploy.yml
+    permissions:
+      contents: write
     with:
       framework: ${{ needs.prepare.outputs.framework }}
       branch: ${{ github.ref_name }}
@@ -239,14 +247,14 @@ jobs:
         integration_test,
         deploy,
       ]
-    if: ${{ !cancelled() && (github.ref_name == 'v5-develop-final' || github.ref_name == 'v5-main-final') }}
+    if: ${{ !cancelled() && github.repository == 'Sonarr/Sonarr' && github.ref_name == 'develop' }}
     env:
       STATUS: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
     runs-on: ubuntu-latest
 
     steps:
       - name: Notify
-        uses: tsickert/discord-webhook@v6.0.0
+        uses: tsickert/discord-webhook@v7.0.0
         with:
           webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}
           username: "GitHub Actions"

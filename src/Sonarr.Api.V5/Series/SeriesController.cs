@@ -1,4 +1,6 @@
 using FluentValidation;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using NzbDrone.Common.Extensions;
 using NzbDrone.Common.TPL;
@@ -8,12 +10,11 @@ using NzbDrone.Core.Datastore.Events;
 using NzbDrone.Core.MediaCover;
 using NzbDrone.Core.MediaFiles;
 using NzbDrone.Core.MediaFiles.Events;
-using NzbDrone.Core.Messaging.Commands;
 using NzbDrone.Core.Messaging.Events;
+using NzbDrone.Core.Parser;
 using NzbDrone.Core.RootFolders;
 using NzbDrone.Core.SeriesStats;
 using NzbDrone.Core.Tv;
-using NzbDrone.Core.Tv.Commands;
 using NzbDrone.Core.Tv.Events;
 using NzbDrone.Core.Validation;
 using NzbDrone.Core.Validation.Paths;
@@ -39,8 +40,8 @@ public class SeriesController : RestControllerWithSignalR<SeriesResource, NzbDro
     private readonly IAddSeriesService _addSeriesService;
     private readonly ISeriesStatisticsService _seriesStatisticsService;
     private readonly ISceneMappingService _sceneMappingService;
+    private readonly ISeriesTranslationService _seriesTranslationService;
     private readonly IMapCoversToLocal _coverMapper;
-    private readonly IManageCommandQueue _commandQueueManager;
     private readonly IRootFolderService _rootFolderService;
 
     private readonly LockByIdPool _seriesLockPool = new();
@@ -50,8 +51,8 @@ public class SeriesController : RestControllerWithSignalR<SeriesResource, NzbDro
                         IAddSeriesService addSeriesService,
                         ISeriesStatisticsService seriesStatisticsService,
                         ISceneMappingService sceneMappingService,
+                        ISeriesTranslationService seriesTranslationService,
                         IMapCoversToLocal coverMapper,
-                        IManageCommandQueue commandQueueManager,
                         IRootFolderService rootFolderService,
                         RootFolderValidator rootFolderValidator,
                         MappedNetworkDriveValidator mappedNetworkDriveValidator,
@@ -61,16 +62,17 @@ public class SeriesController : RestControllerWithSignalR<SeriesResource, NzbDro
                         SystemFolderValidator systemFolderValidator,
                         QualityProfileExistsValidator qualityProfileExistsValidator,
                         RootFolderExistsValidator rootFolderExistsValidator,
-                        SeriesFolderAsRootFolderValidator seriesFolderAsRootFolderValidator)
+                        SeriesFolderAsRootFolderValidator seriesFolderAsRootFolderValidator,
+                        SeriesSeasonTypeValidator seriesSeasonTypeValidator)
         : base(signalRBroadcaster)
     {
         _seriesService = seriesService;
         _addSeriesService = addSeriesService;
         _seriesStatisticsService = seriesStatisticsService;
         _sceneMappingService = sceneMappingService;
+        _seriesTranslationService = seriesTranslationService;
 
         _coverMapper = coverMapper;
-        _commandQueueManager = commandQueueManager;
         _rootFolderService = rootFolderService;
 
         SharedValidator.RuleFor(s => s.Path).Cascade(CascadeMode.Stop)
@@ -101,13 +103,21 @@ public class SeriesController : RestControllerWithSignalR<SeriesResource, NzbDro
             .ValidId()
             .SetValidator(qualityProfileExistsValidator);
 
+        SharedValidator.RuleFor(s => s.Language).Cascade(CascadeMode.Stop)
+            .NotNull()
+            .Must(l => IsoLanguages.Get(l!) != null)
+            .WithMessage("Invalid Language value");
+
+        SharedValidator.RuleFor(s => s.SeasonType).NotEmpty();
+        PutValidator.RuleFor(s => s.SeasonType).SetValidator(seriesSeasonTypeValidator);
+
         PostValidator.RuleFor(s => s.Title).NotEmpty();
         PostValidator.RuleFor(s => s.TvdbId).GreaterThan(0).SetValidator(seriesExistsValidator);
     }
 
     [HttpGet]
     [Produces("application/json")]
-    public List<SeriesResource> AllSeries(int? tvdbId, [FromQuery] SeriesSubresource[]? includeSubresources = null)
+    public Ok<List<SeriesResource>> AllSeries(int? tvdbId, [FromQuery] SeriesSubresource[]? includeSubresources = null)
     {
         var seriesStats = _seriesStatisticsService.SeriesStatistics();
         var seriesResources = new List<SeriesResource>();
@@ -115,7 +125,7 @@ public class SeriesController : RestControllerWithSignalR<SeriesResource, NzbDro
 
         if (tvdbId.HasValue)
         {
-            seriesResources.AddIfNotNull(_seriesService.FindByTvdbId(tvdbId.Value).ToResource(includeSeasonImages));
+            seriesResources.AddIfNotNull(_seriesService.FindByTvdbId(tvdbId.Value)?.ToResource(includeSeasonImages));
         }
         else
         {
@@ -125,20 +135,21 @@ public class SeriesController : RestControllerWithSignalR<SeriesResource, NzbDro
         MapCoversToLocal(seriesResources.ToArray());
         LinkSeriesStatistics(seriesResources, seriesStats.ToDictionary(x => x.SeriesId));
         PopulateAlternateTitles(seriesResources);
+        PopulateTranslations(seriesResources);
         seriesResources.ForEach(LinkRootFolderPath);
 
-        return seriesResources;
+        return TypedResults.Ok(seriesResources);
     }
 
     [NonAction]
-    public override ActionResult<SeriesResource> GetResourceByIdWithErrorHandler(int id)
+    public override Results<Ok<SeriesResource>, NotFound> GetResourceByIdWithErrorHandler(int id)
     {
         return base.GetResourceByIdWithErrorHandler(id);
     }
 
     [RestGetById]
     [Produces("application/json")]
-    public ActionResult<SeriesResource> GetResourceByIdWithErrorHandler(int id, [FromQuery] SeriesSubresource[]? includeSubresources = null)
+    public Results<Ok<SeriesResource>, NotFound> GetResourceByIdWithErrorHandler(int id, [FromQuery] SeriesSubresource[]? includeSubresources = null)
     {
         var includeSeasonImages = includeSubresources.Contains(SeriesSubresource.SeasonImages);
 
@@ -146,11 +157,11 @@ public class SeriesController : RestControllerWithSignalR<SeriesResource, NzbDro
         {
             var series = GetSeriesResourceById(id, includeSeasonImages);
 
-            return series == null ? NotFound() : series;
+            return series == null ? TypedResults.NotFound() : TypedResults.Ok(series);
         }
         catch (ModelNotFoundException)
         {
-            return NotFound();
+            return TypedResults.NotFound();
         }
     }
 
@@ -181,48 +192,33 @@ public class SeriesController : RestControllerWithSignalR<SeriesResource, NzbDro
     [RestPostById]
     [Consumes("application/json")]
     [Produces("application/json")]
-    public ActionResult<SeriesResource> AddSeries([FromBody] SeriesResource seriesResource)
+    public Results<Created<SeriesResource>, NotFound> AddSeries([FromBody] SeriesResource seriesResource)
     {
         var series = _addSeriesService.AddSeries(seriesResource.ToModel());
 
-        return Created(series.Id);
+        return TypedCreated(series.Id);
     }
 
     [RestPutById]
     [Consumes("application/json")]
     [Produces("application/json")]
-    public ActionResult<SeriesResource> UpdateSeries([FromBody] SeriesResource seriesResource, [FromQuery] bool moveFiles = false)
+    public Results<Accepted<SeriesResource>, NotFound> UpdateSeries([FromBody] SeriesResource seriesResource, [FromQuery] bool moveFiles = false)
     {
         var series = _seriesService.GetSeries(seriesResource.Id);
-
-        if (moveFiles)
-        {
-            var sourcePath = series.Path;
-            var destinationPath = seriesResource.Path;
-
-            _commandQueueManager.Push(new MoveSeriesCommand
-            {
-                SeriesId = series.Id,
-                SourcePath = sourcePath,
-                DestinationPath = destinationPath
-            },
-                trigger: CommandTrigger.Manual);
-        }
+        var sourcePath = series.Path;
+        var destinationPath = seriesResource.Path;
 
         var model = seriesResource.ToModel(series);
 
-        // Updating raises SeriesEditedEvent, which broadcasts the persisted resource. Only a
-        // subset of the properties are applied when updating, so broadcasting anything derived
-        // from the submitted resource here would push values that were never stored.
-        _seriesService.UpdateSeries(model);
+        _seriesService.UpdateSeries(model, sourcePath, destinationPath, moveFiles);
 
-        return Accepted(seriesResource.Id);
+        return TypedAccepted(seriesResource.Id);
     }
 
-    [HttpPut("{id}/season")]
+    [HttpPut("{id:int}/season")]
     [Consumes("application/json")]
     [Produces("application/json")]
-    public ActionResult<SeasonResource> UpdateSeasonMonitored([FromRoute] int id, [FromBody] SeasonResource seasonResource)
+    public Results<Ok<SeasonResource>, NotFound> UpdateSeasonMonitored([FromRoute] int id, [FromBody] SeasonResource seasonResource)
     {
         lock (_seriesLockPool.GetLock(id))
         {
@@ -231,25 +227,25 @@ public class SeriesController : RestControllerWithSignalR<SeriesResource, NzbDro
 
             if (season == null)
             {
-                return NotFound();
+                return TypedResults.NotFound();
             }
 
             season.Monitored = seasonResource.Monitored;
 
-            // Updating raises SeriesEditedEvent, which broadcasts the persisted resource with
-            // its covers mapped to local urls.
             _seriesService.UpdateSeries(series);
 
-            return season.ToResource();
+            BroadcastResourceChange(ModelAction.Updated, GetSeriesResource(series, false)!);
+
+            return TypedResults.Ok(season.ToResource());
         }
     }
 
     [RestDeleteById]
-    public ActionResult DeleteSeries(int id, bool deleteFiles = false, bool addImportListExclusion = false)
+    public NoContent DeleteSeries(int id, bool deleteFiles = false, bool addImportListExclusion = false)
     {
         _seriesService.DeleteSeries(new List<int> { id }, deleteFiles, addImportListExclusion);
 
-        return NoContent();
+        return TypedResults.NoContent();
     }
 
     private SeriesResource? GetSeriesResource(NzbDrone.Core.Tv.Series? series, bool includeSeasonImages)
@@ -263,6 +259,7 @@ public class SeriesController : RestControllerWithSignalR<SeriesResource, NzbDro
         MapCoversToLocal(resource);
         FetchAndLinkSeriesStatistics(resource);
         PopulateAlternateTitles(resource);
+        PopulateTranslations(resource);
         LinkRootFolderPath(resource);
 
         return resource;
@@ -272,13 +269,13 @@ public class SeriesController : RestControllerWithSignalR<SeriesResource, NzbDro
     {
         foreach (var seriesResource in series)
         {
-            _coverMapper.ConvertToLocalUrls(seriesResource.Id, seriesResource.Images);
+            _coverMapper.ConvertToLocalUrls(seriesResource.Id, seriesResource.Images, seriesResource.Added);
         }
     }
 
     private void FetchAndLinkSeriesStatistics(SeriesResource resource)
     {
-        LinkSeriesStatistics(resource, _seriesStatisticsService.SeriesStatistics(resource.Id));
+        LinkSeriesStatistics(resource, _seriesStatisticsService.SeriesStatistics(resource.Id, resource.QualityProfileId));
     }
 
     private void LinkSeriesStatistics(List<SeriesResource> resources, Dictionary<int, SeriesStatistics> seriesStatistics)
@@ -308,6 +305,32 @@ public class SeriesController : RestControllerWithSignalR<SeriesResource, NzbDro
                 season.Statistics = seriesStatistics.SeasonStatistics?.SingleOrDefault(s => s.SeasonNumber == season.SeasonNumber)?.ToResource();
             }
         }
+    }
+
+    private void PopulateTranslations(List<SeriesResource> resources)
+    {
+        var translations = _seriesTranslationService.GetTranslations()
+            .GroupBy(t => t.SeriesId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        foreach (var resource in resources)
+        {
+            if (translations.TryGetValue(resource.Id, out var seriesTranslations))
+            {
+                resource.Translations = seriesTranslations
+                    .Select(t => new SeriesTranslationResource
+                    {
+                        Language = t.Language,
+                        Title = t.Title
+                    })
+                    .ToList();
+            }
+        }
+    }
+
+    private void PopulateTranslations(SeriesResource resource)
+    {
+        resource.Translations = _seriesTranslationService.GetTranslations(resource.Id).ToResource();
     }
 
     private void PopulateAlternateTitles(List<SeriesResource> resources)

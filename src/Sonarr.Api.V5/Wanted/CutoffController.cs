@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using NzbDrone.Core.CustomFormats;
 using NzbDrone.Core.Datastore;
@@ -28,7 +30,15 @@ public class CutoffController : EpisodeControllerWithSignalR
 
     [HttpGet]
     [Produces("application/json")]
-    public PagingResource<EpisodeResource> GetCutoffUnmetEpisodes([FromQuery] PagingRequestResource paging, bool monitored = true, [FromQuery] CutoffSubresource[]? includeSubresources = null)
+    public Ok<PagingResource<EpisodeResource>> GetCutoffUnmetEpisodes(
+        [FromQuery] PagingRequestResource paging,
+        [FromQuery] bool monitored = true,
+        [FromQuery] List<int>? seriesIds = null,
+        [FromQuery] List<int>? qualityProfileIds = null,
+        [FromQuery] List<SeriesTypes>? seriesType = null,
+        [FromQuery] HashSet<int>? seriesTags = null,
+        [FromQuery] List<int>? quality = null,
+        [FromQuery] CutoffSubresource[]? includeSubresources = null)
     {
         var pagingResource = new PagingResource<EpisodeResource>(paging);
         var pagingSpec = pagingResource.MapToPagingSpec<EpisodeResource, Episode>(
@@ -36,7 +46,8 @@ public class CutoffController : EpisodeControllerWithSignalR
             {
                 "episodes.airDateUtc",
                 "episodes.lastSearchTime",
-                "series.sortTitle"
+                "series.sortTitle",
+                "quality"
             },
             "episodes.airDateUtc",
             SortDirection.Ascending);
@@ -50,12 +61,27 @@ public class CutoffController : EpisodeControllerWithSignalR
             pagingSpec.FilterExpressions.Add(v => v.Monitored == false || v.Series.Monitored == false);
         }
 
+        if (seriesIds?.Any() == true)
+        {
+            pagingSpec.FilterExpressions.Add(e => seriesIds.Contains(e.SeriesId));
+        }
+
+        if (qualityProfileIds?.Any() == true)
+        {
+            pagingSpec.FilterExpressions.Add(e => qualityProfileIds.Contains(e.Series.QualityProfileId));
+        }
+
+        if (seriesType?.Any() == true)
+        {
+            pagingSpec.FilterExpressions.Add(e => seriesType.Contains(e.Series.SeriesType));
+        }
+
         var includeSeries = includeSubresources.Contains(CutoffSubresource.Series);
         var includeEpisodeFile = includeSubresources.Contains(CutoffSubresource.EpisodeFile);
         var includeImages = includeSubresources.Contains(CutoffSubresource.Images);
 
-        var resource = pagingSpec.ApplyToPage(_episodeCutoffService.EpisodesWhereCutoffUnmet, v => MapToResource(v, includeSeries, includeEpisodeFile, includeImages));
+        var resource = pagingSpec.ApplyToPage(spec => _episodeCutoffService.EpisodesWhereCutoffUnmet(spec, seriesTags, quality), v => MapToResource(v, includeSeries, includeEpisodeFile, includeImages));
 
-        return resource;
+        return TypedResults.Ok(resource);
     }
 }

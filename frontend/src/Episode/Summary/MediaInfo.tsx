@@ -23,7 +23,10 @@ function MediaInfo(props: MediaInfoProps) {
 
         if (key === 'audioStreams') {
           return value.map((audioStream, index) => {
-            const language = getLanguageName(audioStream.language);
+            const language =
+              audioStream.language === 'und'
+                ? translate('Unknown')
+                : getLanguageName(audioStream.language);
 
             let line = `${language}`;
 
@@ -58,39 +61,50 @@ function MediaInfo(props: MediaInfoProps) {
             <DescriptionListItem
               key={key}
               title={translate('MediaInfoSubtitlesHeader')}
-              data={value.reduce(
-                (acc: React.ReactNode[] | null, subtitleStream, index) => {
-                  const language = getLanguageName(subtitleStream.language);
+              data={
+                value.length > 0
+                  ? value.reduce(
+                      (
+                        acc: React.ReactNode[] | null,
+                        subtitleStream,
+                        index
+                      ) => {
+                        const language = getLanguageName(
+                          subtitleStream.language
+                        );
 
-                  let line = `${
-                    subtitleStream.format?.toUpperCase() || translate('Unknown')
-                  }`;
+                        let line = `${
+                          subtitleStream.format?.toUpperCase() ||
+                          translate('Unknown')
+                        }`;
 
-                  if (
-                    subtitleStream.title !== undefined &&
-                    subtitleStream.title !== language
-                  ) {
-                    line += ` | ${subtitleStream.title}`;
-                  }
+                        if (
+                          subtitleStream.title !== undefined &&
+                          subtitleStream.title !== language
+                        ) {
+                          line += ` | ${subtitleStream.title}`;
+                        }
 
-                  if (subtitleStream.forced) {
-                    line += ` | ${translate('MediaInfoForced')}`;
-                  }
+                        if (subtitleStream.forced) {
+                          line += ` | ${translate('MediaInfoForced')}`;
+                        }
 
-                  if (subtitleStream.hearingImpaired) {
-                    line += ` | ${translate('MediaInfoHearingImpaired')}`;
-                  }
+                        if (subtitleStream.hearingImpaired) {
+                          line += ` | ${translate('MediaInfoHearingImpaired')}`;
+                        }
 
-                  const curr = (
-                    <span key={index} title={line}>
-                      {language}
-                    </span>
-                  );
+                        const curr = (
+                          <span key={index} title={line}>
+                            {language}
+                          </span>
+                        );
 
-                  return acc === null ? [curr] : [acc, ' / ', curr];
-                },
-                null
-              )}
+                        return acc === null ? [curr] : [acc, ' / ', curr];
+                      },
+                      null
+                    )
+                  : translate('None')
+              }
             />
           );
         }

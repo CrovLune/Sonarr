@@ -87,7 +87,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport.Manual
 
             var items = seriesFiles.Select(episodeFile => MapItem(episodeFile, series, directoryInfo.Name, episodes)).ToList();
 
-            if (!seasonNumber.HasValue)
+            if (!seasonNumber.HasValue && directoryInfo.Exists)
             {
                 var mediaFiles = _diskScanService.FilterPaths(series.Path, _diskScanService.GetVideoFiles(series.Path)).ToList();
                 var unmappedFiles = MediaFileService.FilterExistingFiles(mediaFiles, seriesFiles, series);
@@ -119,7 +119,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport.Manual
             {
                 var trackedDownload = _trackedDownloadService.Find(downloadId);
 
-                if (trackedDownload == null)
+                if (trackedDownload?.ImportItem == null)
                 {
                     return new List<ManualImportItem>();
                 }
@@ -307,7 +307,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport.Manual
 
                 if (series == null)
                 {
-                    _parsingService.GetSeries(relativeFile.Split('\\', '/')[0]);
+                    series = _parsingService.GetSeries(relativeFile.Split('\\', '/')[0]);
                 }
 
                 if (series == null)
@@ -451,8 +451,12 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport.Manual
             if (decision.LocalEpisode.Series != null)
             {
                 item.Series = decision.LocalEpisode.Series;
-                item.CustomFormats = _localEpisodeFormatCalculator.ParseEpisodeCustomFormats(decision.LocalEpisode);
-                item.CustomFormatScore = item.Series.QualityProfile?.Value.CalculateCustomFormatScore(item.CustomFormats) ?? 0;
+
+                if (item.SeasonNumber.HasValue)
+                {
+                    item.CustomFormats = _localEpisodeFormatCalculator.ParseEpisodeCustomFormats(decision.LocalEpisode);
+                    item.CustomFormatScore = item.Series.QualityProfile?.Value.CalculateCustomFormatScore(item.CustomFormats) ?? 0;
+                }
             }
 
             return item;
@@ -538,9 +542,13 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport.Manual
                 localEpisode.Episodes = episodes;
                 localEpisode.ReleaseGroup = file.ReleaseGroup;
                 localEpisode.Quality = file.Quality;
-                localEpisode.Languages = file.Languages;
                 localEpisode.IndexerFlags = (IndexerFlags)file.IndexerFlags;
                 localEpisode.ReleaseType = file.ReleaseType;
+
+                if (file.Languages is { Count: > 0 } && file.Languages.All(l => l is not null && l.IsValid()))
+                {
+                    localEpisode.Languages = file.Languages;
+                }
 
                 _localEpisodeFormatCalculator.UpdateEpisodeCustomFormats(localEpisode);
 
@@ -619,9 +627,10 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport.Manual
                 if (allEpisodesImported)
                 {
                     var episodeFiles = importedResults.Select(i => i.EpisodeFile).ToList();
+                    var importedEpisodes = importedResults.SelectMany(i => i.ImportDecision.LocalEpisode.Episodes).ToList();
 
                     trackedDownload.State = TrackedDownloadState.Imported;
-                    _eventAggregator.PublishEvent(new DownloadCompletedEvent(trackedDownload, importedSeries.Id, episodeFiles, importedResults.First().ImportDecision.LocalEpisode.Release));
+                    _eventAggregator.PublishEvent(new DownloadCompletedEvent(trackedDownload, importedSeries, importedEpisodes, episodeFiles, importedResults.First().ImportDecision.LocalEpisode.Release));
                 }
             }
         }

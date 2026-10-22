@@ -7,7 +7,7 @@ import useProviderOptions, {
 } from 'Settings/useProviderOptions';
 import { InputChanged } from 'typings/inputs';
 import TagInput, { TagInputProps } from './TagInput';
-import styles from './DeviceInput.css';
+import styles from './DeviceInput.module.css';
 
 interface DeviceTag {
   id: string;
@@ -26,6 +26,7 @@ export interface DeviceInputProps extends TagInputProps<DeviceTag> {
 }
 
 function DeviceInput({
+  id,
   className = styles.deviceInputWrapper,
   name,
   value,
@@ -103,6 +104,7 @@ function DeviceInput({
   return (
     <div className={className}>
       <TagInput
+        id={id}
         inputContainerClassName={styles.input}
         name={name}
         tags={selectedDevices}

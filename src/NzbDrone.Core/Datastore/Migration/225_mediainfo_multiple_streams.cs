@@ -46,8 +46,6 @@ public class mediainfo_multiple_streams : NzbDroneMigrationBase
     {
         var existing = conn.Query<EpisodeFile224>("SELECT \"Id\", \"MediaInfo\" FROM \"EpisodeFiles\"");
 
-        var updated = new List<object>();
-
         foreach (var row in existing)
         {
             if (row.MediaInfo.IsNullOrWhiteSpace())
@@ -64,7 +62,7 @@ public class mediainfo_multiple_streams : NzbDroneMigrationBase
             {
                 _logger.Warn(ex, "Episode {EpisodeId} contains invalid JSON data, skipping.", row.Id);
 
-                updated.Add(new EpisodeFile225 { Id = row.Id, MediaInfo = null });
+                UpdateMediaInfoForEpisodeFile(conn, tran, new EpisodeFile225 { Id = row.Id, MediaInfo = null });
 
                 continue;
             }
@@ -83,17 +81,17 @@ public class mediainfo_multiple_streams : NzbDroneMigrationBase
                 continue;
             }
 
-            updated.Add(new EpisodeFile225
+            UpdateMediaInfoForEpisodeFile(conn, tran, new EpisodeFile225
             {
                 Id = row.Id,
                 MediaInfo = JsonSerializer.Serialize(newMediaInfo, _serializerSettings)
             });
         }
+    }
 
-        conn.Execute(
-            "UPDATE \"EpisodeFiles\" SET \"MediaInfo\" = @MediaInfo WHERE \"Id\" = @Id",
-            updated,
-            transaction: tran);
+    private static void UpdateMediaInfoForEpisodeFile(IDbConnection conn, IDbTransaction tran, EpisodeFile225 updated)
+    {
+        conn.Execute("UPDATE \"EpisodeFiles\" SET \"MediaInfo\" = @MediaInfo WHERE \"Id\" = @Id", updated, transaction: tran);
     }
 
     private static MediaInfo225 MigrateMediaInfo(MediaInfo224 old)
@@ -128,13 +126,19 @@ public class mediainfo_multiple_streams : NzbDroneMigrationBase
             {
                 Language = language,
             })
-            .ToList();
-        audioStreams?.FirstOrDefault()?.Format = old.AudioFormat;
-        audioStreams?.FirstOrDefault()?.CodecId = old.AudioCodecID;
-        audioStreams?.FirstOrDefault()?.Profile = old.AudioProfile;
-        audioStreams?.FirstOrDefault()?.Bitrate = old.AudioBitrate;
-        audioStreams?.FirstOrDefault()?.Channels = old.AudioChannels;
-        audioStreams?.FirstOrDefault()?.ChannelPositions = old.AudioChannelPositions;
+            .ToList() ?? [];
+
+        if (audioStreams.Count == 0)
+        {
+            audioStreams.Add(new MediaInfoAudioStream225 { Language = "und" });
+        }
+
+        audioStreams.FirstOrDefault()?.Format = old.AudioFormat;
+        audioStreams.FirstOrDefault()?.CodecId = old.AudioCodecID;
+        audioStreams.FirstOrDefault()?.Profile = old.AudioProfile;
+        audioStreams.FirstOrDefault()?.Bitrate = old.AudioBitrate;
+        audioStreams.FirstOrDefault()?.Channels = old.AudioChannels;
+        audioStreams.FirstOrDefault()?.ChannelPositions = old.AudioChannelPositions;
 
         return audioStreams;
     }
@@ -146,7 +150,7 @@ public class mediainfo_multiple_streams : NzbDroneMigrationBase
             {
                 Language = language,
             })
-            .ToList();
+            .ToList() ?? [];
 
         return subtitleStreams;
     }

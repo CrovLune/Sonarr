@@ -9,11 +9,17 @@ file only covers what differs or has bitten us.
 `v5-develop` via PRs against **origin**. `gh` defaults to the upstream repo on
 forks, so always pass `--repo CrovLune/Sonarr --base v5-develop`.
 
+Sync from **`upstream/develop`**. Upstream's `v5-develop` was deleted, so a local
+`upstream/v5-develop` ref is stale and lists nothing new. Merge rather than rebase:
+`v5-develop` is published and the deployed images are built from it.
+
 Divergences from upstream:
 
 - Trakt (import lists + notifications) and Telegram notifications are removed.
   Their migrations are retained — migrations must never be deleted.
-- TMDB is used as a supplementary metadata source for original titles.
+- `OriginalTitle` keeps the English title when a series' metadata language is its
+  original language (`OriginalTitleSelection`), so English and native names both
+  match releases. `ReleaseSearchService` also searches under `OriginalTitle`.
 - Nothing is grabbed automatically from a season until every episode in it has
   aired (`SeasonFullyAiredSpecification`, all series types and specials).
   Interactive searches and a user-invoked single-episode search skip the rule.
@@ -48,6 +54,11 @@ migration, so upstream's 226 is treated as applied and will never run.
 `1002_repair_air_date_filtering` exists to add those columns after the fact.
 Any future renumber needs the same treatment.
 
+The reverse also happens: an upstream migration can add a column the fork added
+first. Upstream's `208_metadata_translations` adds `Series.OriginalTitle` and
+`CleanOriginalTitle`, which production already had from `1001`, so 208 carries the
+same guards. Without them it fails at startup with a duplicate column.
+
 ## After merging upstream, check these
 
 1. **Duplicate migration versions** — this is the one that causes outages:
@@ -60,7 +71,10 @@ Any future renumber needs the same treatment.
    ```bash
    grep -rln --include='*.cs' -E "Notifications\.Telegram|Notifications\.Trakt|ImportLists\.Trakt" src/*.Test*/
    ```
-3. **Dangling references** to removed provider types in `src/`.
+3. **Dangling references** to removed provider types in `src/`. Upstream keeps
+   adding Trakt providers (e.g. the Trakt smart list), so delete any new ones.
+4. **New upstream migrations that add columns the fork already has** (see 208
+   above). Then test the migration against a copy of the production database.
 
 ## Testing
 
@@ -81,31 +95,17 @@ docker run --rm -v "$PWD":/src -w /src \
 skyhook API, so logic worth testing belongs in a pure helper beside it (see
 `OriginalTitleSelection`).
 
-## Configuration
+## Metadata language
 
-Fork settings read the database first and fall back to an environment variable,
-so they can be set in `docker-compose.yml` without a UI field:
+Native-language titles, episode titles and overviews come from upstream's
+per-series metadata language (`Series.Language`) and the "Preferred metadata
+language" setting. Skyhook v2 serves them directly. The fork's earlier TMDB
+pipeline (`TmdbApiKey`, `OriginalTitleLanguages`) was removed in favour of it.
 
-| Setting | Environment variable |
-| --- | --- |
-| `TmdbApiKey` | `SONARR__TMDB_API_KEY` |
-| `OriginalTitleLanguages` | `SONARR__ORIGINAL_TITLE_LANGUAGES` |
-
-**`TmdbApiKey` is returned masked** (`"***" + last4`) by the config API. The base
-`ConfigController.SaveConfig` reflects over every resource property and persists
-it, and the Media Management settings page round-trips the whole resource even
-though it renders no TMDB field — so saving any unrelated setting used to write
-`***abcd` over the key and shadow the env var. Both the getter and setter now
-reject the mask (`ConfigService.TmdbApiKeyMask`). Apply the same guard to any new
-masked secret.
-
-`OriginalTitleLanguages` accepts language names or ISO codes (`Russian`, `ru`,
-`rus`). For a listed language the metadata and original titles are **swapped**,
-not overwritten: the native title becomes `Series.Title` and the English title is
-kept as `OriginalTitle`. That matters because `SeriesRepository.FindByTitle` falls
-back to `CleanOriginalTitle` and `ReleaseSearchService` adds `OriginalTitle` to
-scene titles, so existing English filenames still match and searches go out under
-both names.
+If a setting is ever returned masked by the config API, reject the mask in its
+setter too. `ConfigController.SaveConfig` persists every resource property, and the
+settings pages send the whole resource back, so a masked value would otherwise
+overwrite the real one.
 
 ## Deploying
 

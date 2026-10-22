@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import moment from 'moment';
+import moment from 'moment-timezone';
 import { useCallback, useMemo } from 'react';
 import { FilterBuilderTag } from 'Components/Filter/Builder/FilterBuilderRowValue';
 import { Filter, FilterBuilderProp } from 'Filters/Filter';
@@ -15,21 +15,11 @@ import { FilterType } from 'Helpers/Props/filterTypes';
 import getFilterTypePredicate from 'Helpers/Props/getFilterTypePredicate';
 import { SortDirection } from 'Helpers/Props/sortDirections';
 import sortByProp from 'Utilities/Array/sortByProp';
+import dateFilterPredicate from 'Utilities/Date/dateFilterPredicate';
 import clientSideFilterAndSort from 'Utilities/Filter/clientSideFilterAndSort';
 import translate from 'Utilities/String/translate';
-import Series, { Statistics } from './Series';
+import Series, { Season, Statistics } from './Series';
 import { useSeriesOptions } from './seriesOptionsStore';
-
-// Date filter predicate helper
-const dateFilterPredicate = (
-  itemDate: string | undefined,
-  filterValue: string | Date,
-  type: FilterType
-): boolean => {
-  if (!itemDate) return false;
-  const predicate = getFilterTypePredicate(type);
-  return predicate(itemDate, filterValue);
-};
 
 export const FILTERS: Filter[] = [
   {
@@ -95,7 +85,7 @@ export const FILTERS: Filter[] = [
 ];
 
 const SORT_PREDICATES = {
-  status: (item: Series, _direction: SortDirection) => {
+  status: (item: Series, _: SortDirection) => {
     let result = 0;
 
     if (item.monitored) {
@@ -109,45 +99,47 @@ const SORT_PREDICATES = {
     return result;
   },
 
-  sizeOnDisk: (item: Series, _direction: SortDirection) => {
+  sizeOnDisk: (item: Series, _: SortDirection) => {
     return item.statistics?.sizeOnDisk ?? 0;
   },
 
-  network: (item: Series, _direction: SortDirection) => {
-    const network = item.network;
+  averageSizePerEpisode: (item: Series, _: SortDirection) => {
+    const episodeFileCount = item.statistics?.episodeFileCount ?? 0;
 
-    return network ? network.toLowerCase() : '';
+    return episodeFileCount > 0
+      ? (item.statistics?.sizeOnDisk ?? 0) / episodeFileCount
+      : 0;
+  },
+
+  network: (item: Series, _: SortDirection) => {
+    const { network } = item;
+
+    return network?.toLowerCase() ?? '';
   },
 
   nextAiring: (item: Series, direction: SortDirection) => {
-    const nextAiring = item.nextAiring;
+    const { nextAiring } = item;
 
     if (nextAiring) {
       return moment(nextAiring).unix();
     }
 
-    if (direction === sortDirections.DESCENDING) {
-      return 0;
-    }
-
-    return Number.MAX_VALUE;
+    return direction === sortDirections.DESCENDING ? 0 : Number.MAX_VALUE;
   },
 
   previousAiring: (item: Series, direction: SortDirection) => {
-    const previousAiring = item.previousAiring;
+    const { previousAiring } = item;
 
     if (previousAiring) {
       return moment(previousAiring).unix();
     }
 
-    if (direction === sortDirections.DESCENDING) {
-      return -Number.MAX_VALUE;
-    }
-
-    return Number.MAX_VALUE;
+    return direction === sortDirections.DESCENDING
+      ? Number.MAX_VALUE * -1
+      : Number.MAX_VALUE;
   },
 
-  episodeProgress: (item: Series, _direction: SortDirection) => {
+  episodeProgress: (item: Series, _: SortDirection) => {
     const statistics = item.statistics;
 
     const episodeCount = statistics?.episodeCount ?? 0;
@@ -160,34 +152,46 @@ const SORT_PREDICATES = {
     return progress + episodeCount / 1000000;
   },
 
-  episodeCount: (item: Series, _direction: SortDirection) => {
+  episodeCount: (item: Series, _: SortDirection) => {
     return item.statistics?.totalEpisodeCount ?? 0;
   },
 
-  seasonCount: (item: Series, _direction: SortDirection) => {
+  seasonCount: (item: Series, _: SortDirection) => {
     return item.statistics?.seasonCount ?? 0;
   },
 
-  originalLanguage: (item: Series, _direction: SortDirection) => {
+  originalLanguage: (item: Series, _: SortDirection) => {
     const { originalLanguage } = item;
 
     return originalLanguage?.name ?? '';
   },
 
-  ratings: (item: Series, _direction: SortDirection) => {
+  language: (item: Series, _: SortDirection) => {
+    const { language } = item;
+
+    return language?.name ?? '';
+  },
+
+  seasonType: (item: Series, _: SortDirection) => {
+    const { seasonType, seasonTypes } = item;
+
+    return seasonTypes?.find((s) => s.type === seasonType)?.name ?? seasonType;
+  },
+
+  ratings: (item: Series, _: SortDirection) => {
     const { ratings } = item;
 
     return ratings.value ?? 0;
   },
 
-  monitorNewItems: (item: Series, _direction: SortDirection) => {
+  monitorNewItems: (item: Series, _: SortDirection) => {
     return item.monitorNewItems === 'all' ? 1 : 0;
   },
 } as const;
 
 const FILTER_PREDICATES = {
   episodeProgress: (item: Series, filterValue: number, type: FilterType) => {
-    const statistics = item.statistics;
+    const { statistics } = item;
     const episodeCount = statistics?.episodeCount ?? 0;
     const episodeFileCount = statistics?.episodeFileCount ?? 0;
 
@@ -199,26 +203,34 @@ const FILTER_PREDICATES = {
     return predicate(progress, filterValue);
   },
 
-  missing: (item: Series, _filterValue: boolean, _type: FilterType) => {
-    const statistics = item.statistics;
+  missing: (item: Series, _filterValue: boolean, _: FilterType) => {
+    const { statistics } = item;
     const episodeCount = statistics?.episodeCount ?? 0;
     const episodeFileCount = statistics?.episodeFileCount ?? 0;
     return episodeCount - episodeFileCount > 0;
   },
 
-  nextAiring: (item: Series, filterValue: string | Date, type: FilterType) => {
+  nextAiring: (
+    item: Series,
+    filterValue: string | { time: string; value: number },
+    type: FilterType
+  ) => {
     return dateFilterPredicate(item.nextAiring, filterValue, type);
   },
 
   previousAiring: (
     item: Series,
-    filterValue: string | Date,
+    filterValue: string | { time: string; value: number },
     type: FilterType
   ) => {
     return dateFilterPredicate(item.previousAiring, filterValue, type);
   },
 
-  added: (item: Series, filterValue: string | Date, type: FilterType) => {
+  added: (
+    item: Series,
+    filterValue: string | { time: string; value: number },
+    type: FilterType
+  ) => {
     return dateFilterPredicate(item.added, filterValue, type);
   },
 
@@ -246,6 +258,24 @@ const FILTER_PREDICATES = {
     return predicate(releaseGroups, filterValue);
   },
 
+  releaseTypes: (item: Series, filterValue: string[], type: FilterType) => {
+    const releaseTypes = item.statistics?.releaseTypes ?? [];
+    const predicate = getFilterTypePredicate(type);
+    return predicate(releaseTypes, filterValue);
+  },
+
+  episodeFileQualities: (
+    item: Series,
+    filterValue: number[],
+    type: FilterType
+  ) => {
+    const episodeFileQualities = (
+      item.statistics?.episodeFileQualities ?? []
+    ).map((q) => q.id);
+    const predicate = getFilterTypePredicate(type);
+    return predicate(episodeFileQualities, filterValue);
+  },
+
   seasonCount: (item: Series, filterValue: number, type: FilterType) => {
     const predicate = getFilterTypePredicate(type);
     const seasonCount = item.statistics?.seasonCount ?? 0;
@@ -258,9 +288,23 @@ const FILTER_PREDICATES = {
     return predicate(sizeOnDisk, filterValue);
   },
 
+  averageSizePerEpisode: (
+    item: Series,
+    filterValue: number,
+    type: FilterType
+  ) => {
+    const predicate = getFilterTypePredicate(type);
+    const episodeFileCount = item.statistics?.episodeFileCount ?? 0;
+    const averageSize =
+      episodeFileCount > 0
+        ? (item.statistics?.sizeOnDisk ?? 0) / episodeFileCount
+        : 0;
+    return predicate(averageSize, filterValue);
+  },
+
   hasMissingSeason: (item: Series, filterValue: boolean, type: FilterType) => {
     const predicate = getFilterTypePredicate(type);
-    const seasons = item.seasons ?? [];
+    const { seasons = [] } = item;
 
     const hasMissingSeason = seasons.some((season) => {
       const { seasonNumber } = season;
@@ -286,7 +330,7 @@ const FILTER_PREDICATES = {
     type: FilterType
   ) => {
     const predicate = getFilterTypePredicate(type);
-    const seasons = item.seasons ?? [];
+    const { seasons = [] } = item;
 
     const { monitoredCount, unmonitoredCount } = seasons.reduce(
       (acc, { seasonNumber, monitored }) => {
@@ -376,7 +420,7 @@ export const FILTER_BUILDER: FilterBuilderProp<Series>[] = [
     name: 'network',
     label: () => translate('Network'),
     type: filterBuilderTypes.ARRAY,
-    optionsSelector: function (items: Series[]) {
+    optionsSelector: function (items: ReadonlyArray<Series>) {
       const tagList = items.reduce<FilterBuilderTag<string, string>[]>(
         (acc, series) => {
           if (series.network) {
@@ -445,10 +489,16 @@ export const FILTER_BUILDER: FilterBuilderProp<Series>[] = [
     valueType: filterBuilderValueTypes.BYTES,
   },
   {
+    name: 'averageSizePerEpisode',
+    label: () => translate('AverageSizePerEpisode'),
+    type: filterBuilderTypes.NUMBER,
+    valueType: filterBuilderValueTypes.BYTES,
+  },
+  {
     name: 'genres',
     label: () => translate('Genres'),
     type: filterBuilderTypes.ARRAY,
-    optionsSelector: function (items: Series[]) {
+    optionsSelector: function (items: ReadonlyArray<Series>) {
       const tagList = items.reduce<FilterBuilderTag<string, string>[]>(
         (acc, series) => {
           series.genres.forEach((genre) => {
@@ -470,7 +520,7 @@ export const FILTER_BUILDER: FilterBuilderProp<Series>[] = [
     name: 'originalLanguage',
     label: () => translate('OriginalLanguage'),
     type: filterBuilderTypes.EXACT,
-    optionsSelector: function (items: Series[]) {
+    optionsSelector: function (items: ReadonlyArray<Series>) {
       const languageList = items.reduce<FilterBuilderTag<string, string>[]>(
         (acc, series) => {
           if (series.originalLanguage) {
@@ -492,6 +542,18 @@ export const FILTER_BUILDER: FilterBuilderProp<Series>[] = [
     name: 'releaseGroups',
     label: () => translate('ReleaseGroups'),
     type: filterBuilderTypes.ARRAY,
+  },
+  {
+    name: 'releaseTypes',
+    label: () => translate('ReleaseTypes'),
+    type: filterBuilderTypes.ARRAY,
+    valueType: filterBuilderValueTypes.RELEASE_TYPES,
+  },
+  {
+    name: 'episodeFileQualities',
+    label: () => translate('EpisodeFileQualities'),
+    type: filterBuilderTypes.ARRAY,
+    valueType: filterBuilderValueTypes.QUALITY,
   },
   {
     name: 'ratings',
@@ -646,6 +708,10 @@ interface SaveSeriesPayload extends Partial<Series> {
   id: number;
 }
 
+interface SaveSeriesRequest extends Omit<SaveSeriesPayload, 'seasons'> {
+  seasons?: Omit<Season, 'statistics'>[];
+}
+
 interface DeleteSeriesPayload {
   deleteFiles?: boolean;
   addImportListExclusion?: boolean;
@@ -694,20 +760,23 @@ interface SaveSeriesEditorPayload {
   seasonFolder?: boolean;
   rootFolderPath?: string;
   tags?: number[];
+  applyTags?: string;
 }
 
-export const useSaveSeries = (moveFiles?: boolean) => {
+export const useSaveSeries = () => {
   const queryClient = useQueryClient();
 
   const { mutate, isPending, error } = useApiMutation<
     Series,
-    SaveSeriesPayload
+    SaveSeriesRequest,
+    { data: SaveSeriesRequest; moveFiles: boolean }
   >({
     path: '/series',
-    queryParams: {
-      moveFiles,
-    },
     method: 'PUT',
+    getRequest: ({ data, moveFiles }) => ({
+      body: data,
+      queryParams: { moveFiles },
+    }),
     mutationOptions: {
       onSuccess: (updatedSeries) => {
         queryClient.setQueryData<Series[]>(['/series'], (oldSeries) => {
@@ -730,8 +799,32 @@ export const useSaveSeries = (moveFiles?: boolean) => {
     },
   });
 
+  const saveSeries = useCallback(
+    (
+      {
+        alternateTitles,
+        images,
+        seasons,
+        seasonTypes,
+        statistics,
+        translations,
+        ...payload
+      }: SaveSeriesPayload,
+      moveFiles = false
+    ) => {
+      mutate({
+        data: {
+          ...payload,
+          seasons: seasons?.map(({ statistics, ...season }) => season),
+        },
+        moveFiles,
+      });
+    },
+    [mutate]
+  );
+
   return {
-    saveSeries: mutate,
+    saveSeries,
     isSaving: isPending,
     saveError: error,
   };
@@ -866,7 +959,11 @@ export const useUpdateSeriesMonitor = (
     mutationOptions: {
       onSuccess: (_, variables) => {
         if (shouldFetchEpisodesAfterUpdate) {
-          queryClient.invalidateQueries({ queryKey: ['/episode'] });
+          variables.series.forEach((s) => {
+            queryClient.invalidateQueries({
+              queryKey: ['/episode', { seriesId: s.id }],
+            });
+          });
         }
 
         queryClient.setQueryData<Series[]>(['/series'], (oldSeries) => {

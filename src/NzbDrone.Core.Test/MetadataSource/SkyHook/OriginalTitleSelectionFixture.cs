@@ -1,8 +1,8 @@
-using System.Linq;
+using System.Collections.Generic;
 using FluentAssertions;
 using NUnit.Framework;
-using NzbDrone.Core.Languages;
 using NzbDrone.Core.MetadataSource.SkyHook;
+using NzbDrone.Core.MetadataSource.SkyHook.Resource;
 using NzbDrone.Test.Common;
 
 namespace NzbDrone.Core.Test.MetadataSource.SkyHook
@@ -10,98 +10,63 @@ namespace NzbDrone.Core.Test.MetadataSource.SkyHook
     [TestFixture]
     public class OriginalTitleSelectionFixture : TestBase
     {
-        [TestCase("Russian")]
-        [TestCase("russian")]
-        [TestCase("ru")]
-        [TestCase("rus")]
-        public void should_parse_languages_by_name_or_iso_code(string configured)
+        private static List<TranslationResource> Translations()
         {
-            OriginalTitleSelection.ParseLanguages(configured)
-                                  .Should().Equal(Language.Russian);
+            return new List<TranslationResource>
+            {
+                new() { Language = "eng", Title = "Silver Spoon (2014)" },
+                new() { Language = "rus", Title = "Мажор" }
+            };
         }
 
         [Test]
-        public void should_parse_multiple_languages_and_ignore_blanks()
+        public void should_use_the_original_language_title_when_metadata_is_in_another_language()
         {
-            OriginalTitleSelection.ParseLanguages(" Russian , , ukrainian ")
-                                  .Should().Equal(Language.Russian, Language.Ukrainian);
+            OriginalTitleSelection.Select("Silver Spoon (2014)", "rus", Translations())
+                                  .Should().Be("Мажор");
         }
 
         [Test]
-        public void should_ignore_unrecognised_languages()
+        public void should_use_the_english_title_when_metadata_is_in_the_original_language()
         {
-            OriginalTitleSelection.ParseLanguages("Klingon").Should().BeEmpty();
-        }
-
-        [TestCase(null)]
-        [TestCase("")]
-        [TestCase("   ")]
-        public void should_return_no_languages_when_unconfigured(string configured)
-        {
-            OriginalTitleSelection.ParseLanguages(configured).Should().BeEmpty();
+            OriginalTitleSelection.Select("Мажор", "rus", Translations())
+                                  .Should().Be("Silver Spoon (2014)");
         }
 
         [Test]
-        public void should_not_swap_duplicate_languages()
+        public void should_compare_titles_ignoring_case()
         {
-            OriginalTitleSelection.ParseLanguages("Russian,ru,rus")
-                                  .Should().Equal(Language.Russian);
+            OriginalTitleSelection.Select("МАЖОР", "rus", Translations())
+                                  .Should().Be("Silver Spoon (2014)");
         }
 
         [Test]
-        public void should_swap_when_original_language_is_configured()
+        public void should_return_null_for_an_english_series_in_english()
         {
-            var result = OriginalTitleSelection.Select("Silver Spoon (2014)", "Мажор", Language.Russian, new[] { Language.Russian });
+            var translations = new List<TranslationResource>
+            {
+                new() { Language = "eng", Title = "The Office" }
+            };
 
-            result.Title.Should().Be("Мажор");
-            result.AlternateTitle.Should().Be("Silver Spoon (2014)");
+            OriginalTitleSelection.Select("The Office", "eng", translations).Should().BeNull();
         }
 
         [Test]
-        public void should_not_swap_when_original_language_is_not_configured()
+        public void should_return_null_without_translations()
         {
-            var result = OriginalTitleSelection.Select("SPY x FAMILY", "SPY × FAMILY", Language.Japanese, new[] { Language.Russian });
-
-            result.Title.Should().Be("SPY x FAMILY");
-            result.AlternateTitle.Should().Be("SPY × FAMILY");
+            OriginalTitleSelection.Select("Мажор", "rus", new List<TranslationResource>()).Should().BeNull();
         }
 
         [Test]
-        public void should_not_swap_when_no_languages_configured()
+        public void should_ignore_blank_translation_titles()
         {
-            var result = OriginalTitleSelection.Select("Silver Spoon (2014)", "Мажор", Language.Russian, Enumerable.Empty<Language>().ToList());
+            var translations = new List<TranslationResource>
+            {
+                new() { Language = "rus", Title = " " },
+                new() { Language = "eng", Title = "Silver Spoon (2014)" }
+            };
 
-            result.Title.Should().Be("Silver Spoon (2014)");
-            result.AlternateTitle.Should().Be("Мажор");
-        }
-
-        [TestCase(null)]
-        [TestCase("")]
-        [TestCase("   ")]
-        public void should_not_swap_when_original_title_is_missing(string originalTitle)
-        {
-            var result = OriginalTitleSelection.Select("Silver Spoon (2014)", originalTitle, Language.Russian, new[] { Language.Russian });
-
-            result.Title.Should().Be("Silver Spoon (2014)");
-            result.AlternateTitle.Should().Be(originalTitle);
-        }
-
-        [Test]
-        public void should_not_swap_when_titles_only_differ_by_case()
-        {
-            var result = OriginalTitleSelection.Select("Mashle", "mashle", Language.Russian, new[] { Language.Russian });
-
-            result.Title.Should().Be("Mashle");
-            result.AlternateTitle.Should().Be("mashle");
-        }
-
-        [Test]
-        public void should_not_swap_when_original_language_is_unknown()
-        {
-            var result = OriginalTitleSelection.Select("Silver Spoon (2014)", "Мажор", null, new[] { Language.Russian });
-
-            result.Title.Should().Be("Silver Spoon (2014)");
-            result.AlternateTitle.Should().Be("Мажор");
+            OriginalTitleSelection.Select("Silver Spoon (2014)", "rus", translations).Should().BeNull();
         }
     }
 }

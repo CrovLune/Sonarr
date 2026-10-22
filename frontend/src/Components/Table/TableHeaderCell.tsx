@@ -1,9 +1,11 @@
-import React, { useCallback } from 'react';
+import classNames from 'classnames';
+import React, { useCallback, useMemo } from 'react';
 import Icon from 'Components/Icon';
 import Link from 'Components/Link/Link';
 import { icons, sortDirections } from 'Helpers/Props';
 import { SortDirection } from 'Helpers/Props/sortDirections';
-import styles from './TableHeaderCell.css';
+import { IsModifiable } from './Column';
+import styles from './TableHeaderCell.module.css';
 
 interface TableHeaderCellProps {
   className?: string;
@@ -12,7 +14,7 @@ interface TableHeaderCellProps {
   columnLabel?: string | (() => string);
   isSortable?: boolean;
   isVisible?: boolean;
-  isModifiable?: boolean;
+  isModifiable?: IsModifiable;
   sortKey?: string;
   fixedSortDirection?: SortDirection;
   sortDirection?: string;
@@ -41,6 +43,20 @@ function TableHeaderCell({
       ? icons.SORT_ASCENDING
       : icons.SORT_DESCENDING;
 
+  const ariaSortValue = useMemo(() => {
+    if (!isSortable) {
+      return undefined;
+    }
+
+    if (!isSorting) {
+      return 'none';
+    }
+
+    return sortDirection === sortDirections.ASCENDING
+      ? 'ascending'
+      : 'descending';
+  }, [isSorting, sortDirection, isSortable]);
+
   const handlePress = useCallback(() => {
     if (fixedSortDirection) {
       onSortPress?.(name, fixedSortDirection);
@@ -53,17 +69,34 @@ function TableHeaderCell({
     <Link
       {...otherProps}
       component="th"
-      className={className}
+      className={classNames(
+        className,
+        styles.sortable,
+        isSorting && styles.sorted
+      )}
       // label={typeof label === 'function' ? label() : label}
       title={typeof columnLabel === 'function' ? columnLabel() : columnLabel}
+      scope="col"
+      aria-sort={ariaSortValue}
       onPress={handlePress}
     >
-      {children}
+      <span className={styles.content}>
+        {children}
 
-      {isSorting && <Icon name={sortIcon} className={styles.sortIcon} />}
+        {isSorting ? (
+          <Icon
+            name={sortIcon}
+            className={styles.sortIcon}
+            size={12}
+            aria-hidden={true}
+          />
+        ) : null}
+      </span>
     </Link>
   ) : (
-    <th className={className}>{children}</th>
+    <th className={className} scope="col">
+      {children}
+    </th>
   );
 }
 

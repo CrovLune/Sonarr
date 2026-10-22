@@ -1,11 +1,10 @@
 import React, { useMemo } from 'react';
-import Label from 'Components/Label';
 import ClipboardButton from 'Components/Link/ClipboardButton';
 import Link from 'Components/Link/Link';
 import { kinds, sizes } from 'Helpers/Props';
 import Series from 'Series/Series';
 import translate from 'Utilities/String/translate';
-import styles from './SeriesDetailsLinks.css';
+import styles from './SeriesDetailsLinks.module.css';
 
 type SeriesDetailsLinksProps = Pick<
   Series,
@@ -13,7 +12,7 @@ type SeriesDetailsLinksProps = Pick<
 >;
 
 interface SeriesDetailsLink {
-  externalId: string | number;
+  externalId?: string | number;
   name: string;
   url: string;
 }
@@ -25,18 +24,11 @@ function SeriesDetailsLinks(props: SeriesDetailsLinksProps) {
     const validLinks: SeriesDetailsLink[] = [];
 
     if (tvdbId) {
-      validLinks.push(
-        {
-          externalId: tvdbId,
-          name: 'The TVDB',
-          url: `https://www.thetvdb.com/?tab=series&id=${tvdbId}`,
-        },
-        {
-          externalId: tvdbId,
-          name: 'Trakt',
-          url: `https://trakt.tv/search/tvdb/${tvdbId}?id_type=show`,
-        }
-      );
+      validLinks.push({
+        externalId: tvdbId,
+        name: 'The TVDB',
+        url: `https://www.thetvdb.com/?tab=series&id=${tvdbId}`,
+      });
     }
 
     if (tvMazeId) {
@@ -55,7 +47,10 @@ function SeriesDetailsLinks(props: SeriesDetailsLinksProps) {
           url: `https://imdb.com/title/${imdbId}/`,
         },
         {
-          externalId: imdbId,
+          name: 'Trakt',
+          url: `https://trakt.tv/shows/${imdbId}`,
+        },
+        {
           name: 'MDBList',
           url: `https://mdblist.com/show/${imdbId}`,
         }
@@ -70,7 +65,9 @@ function SeriesDetailsLinks(props: SeriesDetailsLinksProps) {
       });
     }
 
-    return validLinks;
+    return validLinks.sort(
+      (a, b) => Number(!a.externalId) - Number(!b.externalId)
+    );
   }, [tvdbId, tvMazeId, imdbId, tmdbId]);
 
   return (
@@ -78,22 +75,19 @@ function SeriesDetailsLinks(props: SeriesDetailsLinksProps) {
       {links.map((link) => (
         <div key={link.name} className={styles.linkBlock}>
           <Link className={styles.link} to={link.url}>
-            <Label
-              className={styles.linkLabel}
-              kind={kinds.INFO}
-              size={sizes.LARGE}
-            >
-              {link.name}
-            </Label>
+            {link.name}
           </Link>
 
-          <ClipboardButton
-            value={`${link.externalId}`}
-            title={translate('CopyToClipboard')}
-            kind={kinds.DEFAULT}
-            size={sizes.SMALL}
-            label={link.externalId}
-          />
+          {link.externalId ? (
+            <ClipboardButton
+              className={styles.copyButton}
+              value={`${link.externalId}`}
+              title={translate('CopyToClipboard')}
+              kind={kinds.DEFAULT}
+              size={sizes.SMALL}
+              label={link.externalId}
+            />
+          ) : null}
         </div>
       ))}
     </div>
