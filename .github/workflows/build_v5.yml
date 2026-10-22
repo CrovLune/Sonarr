@@ -4,11 +4,14 @@ on:
   push:
     branches:
       - develop
+      # Fork: work lands on v5-develop
+      - v5-develop
     paths-ignore:
       - "src/Sonarr.Api.*/openapi.json"
   pull_request:
     branches:
       - develop
+      - v5-develop
     paths-ignore:
       - "src/NzbDrone.Core/Localization/Core/**"
       - "src/Sonarr.Api.*/openapi.json"
