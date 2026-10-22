@@ -14,6 +14,11 @@ Divergences from upstream:
 - Trakt (import lists + notifications) and Telegram notifications are removed.
   Their migrations are retained — migrations must never be deleted.
 - TMDB is used as a supplementary metadata source for original titles.
+- Nothing is grabbed automatically from a season until every episode in it has
+  aired (`SeasonFullyAiredSpecification`, all series types and specials).
+  Interactive searches and a user-invoked single-episode search skip the rule.
+  Because RSS never revisits old posts, `SeasonFinaleSearchService` runs hourly
+  and queues a season search for each season whose finale aired since its last run.
 - Docker packaging lives in the repo (`Dockerfile`, `docker-compose.yml`,
   `build-and-push.sh`).
 
